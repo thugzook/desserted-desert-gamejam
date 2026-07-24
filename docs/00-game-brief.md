@@ -1,56 +1,122 @@
-# Game Brief — "Desserted Desert Dessert"
+# Game Brief — "Desserted Desert Dessert" (v2)
 
-> **Status: DRAFT.** The mechanics sections are settled framework; the creative sections
-> (theme, names, art direction) are placeholders for you to edit or replace with your
-> project plan. Future AI sessions: treat the *user's* edits here as the source of truth.
+> **Status: USER SPEC (2026-07-24).** This version was written from the user's design
+> brief and **supersedes the v1 draft entirely** where they conflict. Sections marked
+> **[user spec]** restate the user's intent — do not reinterpret them. Sections marked
+> **[interpretation]** are AI integration notes the user has not yet confirmed.
+> Future AI sessions: the user's edits here always win.
 
-## Concept (one sentence)
+## Design pillars [user spec]
 
-A lone snack stands in the desert while waves of desserts fly at it — duck, jump, slide, and parry to survive the sugar rush.
+1. **Go faster.**
+2. **Power fantasy.**
+3. **Player agency** — you make the game easier or harder based on your choices.
 
-## Theme interpretation (placeholder — make it yours)
+Inspirations: Temple Run, RUN (the flash game), Vampire Survivors — any game that encourages you to make choices that influence the way you play, possibly going faster as well. Race the Sun and Boson X are good examples.
 
-Ideas to riff on: you're the last dessert *deserted* in the desert; enemy projectiles are donuts (duck through the hole?), baguettes, cactus-cupcakes, rolling cinnamon buns, sandstorm sprinkles. A parry could be a spatula swat. Wave titles as puns ("Just Deserts", "Pie Noon" — high noon showdown framing fits the fixed-position duel).
+Art & sound: **TBD.** Simple pixel art for now, or blocky shapes we can modify later.
 
-## Core loop
+## Main aim [user spec]
+
+Dodge + parry attacks and go faster, trying to live the longest using the **timer at the top**. Upgrades help make dodging easier or make time move faster. It's a pure risk-vs-reward game — **how close can you fly towards the sun?**
+
+## Core loop [user spec]
 
 ```
-attack telegraphed (sound + wind-up)
-   → player picks a response (duck / jump / slide_left / slide_right / parry)
-   → resolution: dodged (+10) | parried (+25) | hit (−1 HP)
-   → next attack; waves ramp per docs/04 §5
+Dodge/Parry attacks → Manage stamina → Choose upgrades to get your score higher
+       → Dodge/Parry attacks → …
 ```
 
-Session length target: 2–3 minutes to game over for a first-time player.
+## Enablers & blockers [user spec]
 
-## Player verbs
+| | Toward the goal | Against the goal |
+|---|---|---|
+| **Active** | 4-direction dodge (arrow keys / WASD) · high-risk-high-reward parry that gives stamina back on successful parry | Projectiles |
+| **Passive** | Stamina recovery over time · any buffs earned during the run | Stamina (resource) management · reaction time |
 
-Duck, Jump, Slide Left, Slide Right, Parry. (Full state machine: `docs/02` §3.)
+## High-level features [user spec]
 
-## Win/lose
+- **A timer** — the survival clock at the top of the screen; your score is linked to your time.
+- **A timer multiplier** — score is linked to time, so to get a longer time you need to speed time up, **which makes the game harder**. (Fly closer to the sun.)
+- **Stamina system** — actions are linked to stamina: dodging costs stamina; successful parries return stamina.
+- **4-direction dodge, collision-based** — ⚠️ **design change from v1:** dodge resolution is **NOT tied to attack patterns** (no "this attack requires DUCK" matching). Whether you're hit is decided by **character collision** — you physically move out of (or into) a projectile's path. Rationale: flexibility — if the player jumps into an unavoidable mix of projectiles, they must be able to **parry while in the air**.
+- **Items at critical points in the run:**
+  - some **beneficial but mild** (restore health, increase max stamina)
+  - some **risky** (recover stamina 50% faster, but the game gets 25% faster)
+  - some **cursed** (for later)
 
-- **Lose:** HP (3) reaches 0 → game over → score + high score → instant restart.
-- **Win (MVP):** survive all authored waves → victory screen + score. Endless mode is stretch.
+## UI framework — from `docs/UI-mock.jpg` [user spec, notes are interpretation]
 
-## MVP cutline (ships by day 5)
+The mock shows, checked against the intent brief:
 
-- 4–5 attack types with distinct telegraphs (sound + color + angle)
-- Teaching wave sequence (each type solo before mixing — docs/04 §6)
-- Score, HP hearts, game over, restart, high score
-- Hitstop/shake/flash juice + per-attack SFX
-- Web export that runs in a browser
+- **Timer top-center** in `00:00:00` format, with the **timer multiplier** (e.g. `x1.5`) displayed just beside it — matches "live the longest using the timer at the top" + the multiplier feature.
+- **Life total** as hearts (3 in the mock) directly under the timer — confirms health exists alongside stamina. **[interpretation]** Getting hit costs a heart, not stamina (spec ties stamina to *actions*; "restore health" items imply a separate pool).
+- **Player character** — a blocky placeholder (matches "blocky shapes for now") standing on a **ground line at bottom-center** of the play area, *not* floating mid-screen. **[interpretation]** With a ground plane, the up-dodge reads as a jump — consistent with the "parry while in the air" scenario.
+- **Projectiles** converging from multiple directions (top, left, right in the mock) — supports collision-based dodging. **[interpretation]** No lane system implied by the mock.
+- **Stamina as a "Deadlock"-style bar**: segmented radial pips arcing around the player character, not a corner HUD bar. **[interpretation]** Good call for a reaction game — stamina stays in the same foveal zone as the dodging.
 
-## Stretch (in cut-priority order — see docs/05 §3)
+## Phases [user spec, sizing rationale from user: "I don't want to make too much in one run because I won't be able to maintain it"]
 
-1. Parry fail-soft (late parry = half damage block)
-2. Boss pattern (long scripted wave with its own music)
-3. Combo meter / score multiplier
-4. Endless mode with procedural wave mixing
-5. Practice mode (accessibility)
+**Rule: one phase per build run.** Each phase ends with a game that runs, is understandable, and could ship as-is. Do not start the next phase in the same session; the user reviews between phases.
 
-## Open questions for the user
+### Phase 1 — base prototype ("the essential is timer, dodge, parry and projectiles")
 
-- [ ] Final theme/art direction (what IS the player sprite?)
-- [ ] Keyboard mapping preference (arrows? WASD + space/J/K?)
-- [ ] Target: web build for the jam page, correct?
-- [ ] Jam deadline date/time (to put in CLAUDE.md)
+1. **Timer** — `00:00:00` survival clock, top center. It IS the score (no multiplier yet — fixed ×1.0).
+2. **Health** — 3 hearts; projectile hit = −1 heart; 0 = game over → restart.
+3. **4-direction dodge** — dash-and-return, SNAPPY: dodge left = move quickly to the "left" position, hang briefly, return quickly to home. Costs stamina.
+4. **Parry** — instant reward on success (stamina back); animation lock on failure (exposed, possibly hit). Usable mid-dodge.
+5. **Stamina system** — dodge costs it, successful parry refunds it, regenerates over time. Radial pips around the character.
+6. **Projectiles** — plain rectangles (maybe a "trace" animation for flair), collision-based hits, simple repeating spawn pattern.
+
+**Done when:** you can play a full run — survive, dodge, parry, die, see your time, restart — and every number is tweakable in the Inspector.
+
+### Phase 2 — the risk-vs-reward layer
+
+- **Upgrade system** — items at critical points; mild tier (restore health, +max stamina) and risky tier (+50% stamina regen but +25% game speed). Cadence (time-based vs event-based) gets decided at the start of this phase — deliberately deferred.
+- **Timer multiplier** — appears next to the timer; rises **through upgrades only** (no direct control). This is where "fly closer to the sun" becomes real.
+- **Satisfying parry/movement** — game feel pass: hitstop, shake, SFX, animation snap (docs/03 §9).
+- **Light system** — e.g. a torch that narrows your view (per user: phase 2 stuff).
+- High-score persistence (trivial — GameManager ConfigFile).
+
+**Done when:** a run's difficulty is meaningfully shaped by the player's upgrade choices.
+
+### Phase 3 — stretch / polish
+
+- Cursed items
+- Music
+- Animations / character design (replace the rectangles)
+- Controls-remap menu (defaults ship in Phase 1; the menu is Phase 3 plumbing)
+- Anything cut from earlier phases
+
+## Framework impact [interpretation — to reconcile in docs/02 & 03 next session]
+
+The v1 framework docs were written for a lane/state-matching game. What this spec changes:
+
+| v1 (docs/02–03 as written) | v2 (this spec) |
+|---|---|
+| States DUCK/JUMP/SLIDE_LEFT/SLIDE_RIGHT; `STATE_BEATS_DODGE` matching in `resolve_attack()` | **Delete dodge-type matching.** Player has a position + hurtbox; dodges are short directional moves (up/down/left/right); hit = hurtbox overlap, dodge = simply not being there |
+| Actions are committed states; inputs only from IDLE | **Parry must be usable during a dodge** (e.g. airborne). Parry becomes an overlay action, not an exclusive state |
+| `AttackData.dodge_type` drives resolution | `dodge_type` becomes (at most) a **spawn-direction/aim hint**; resolution is pure collision |
+| Win = survive authored waves | **Endless survival; score = timer value.** Waves/`WaveData` survive as the pattern-authoring format, ramping per docs/04 §5 |
+| No resource systems | **Stamina** (dodge costs, successful parry refunds, regen over time) + **timer multiplier** + **upgrade/item choices** |
+| Player fixed at screen center | Per the mock: player on a **ground line at bottom-center**; up-dodge = a jump arc (still animation/tween-driven — the "no physics gravity" invariant can hold) |
+
+Still valid and unchanged: signal bus + 2 autoloads, Resources for attack/wave/item data (items are a natural third resource type), enum+match state machine (with a reshaped state set), input buffer + player-favoring leniency, telegraph/timing numbers (docs/04), juice pack, restart flow, scope discipline (docs/05).
+
+## Resolved decisions [user spec, answered 2026-07-24]
+
+| Question | User's answer |
+|---|---|
+| Parry cost on whiff | No stamina cost — the risk is **recovery/exposure time**. Parries are **instant reward on success, animation lock on failure** (possibly get hit during the lock). |
+| Timer multiplier control | **Upgrade only.** No direct player control. |
+| Dodge feel | **Dash-and-return. It should feel SNAPPY.** Dodge left = character moves quickly to the "left" position in space, hangs there a bit, then returns quickly to home. |
+| Upgrade cadence | Not defined yet — **deliberately deferred to Phase 2**. "The essential is timer, dodge, parry and projectiles for now." |
+| Controls | Default **A/S/D + Space for movement, J for parry**; a menu to change controls comes later (Phase 3). |
+| Light system | The torch **narrows view** (example). Phase 2. |
+| Projectile art | **Plain rectangles**, maybe a "trace" animation for light flair. |
+
+## Still open
+
+- [ ] **[interpretation to confirm]** Exact dodge mapping for "ASD + Space": reading it as **A = left, D = right, S = down, Space = up/jump** (W unused). Correct?
+- [ ] Dessert/desert theme skin — parked; rectangles until Phase 3.
+- [ ] Jam deadline date/time (for CLAUDE.md).
