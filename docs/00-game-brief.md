@@ -114,6 +114,7 @@ Still valid and unchanged: signal bus + 2 autoloads, Resources for attack/wave/i
 | Controls | Default **A/S/D + Space for movement, J for parry**; a menu to change controls comes later (Phase 3). |
 | Light system | The torch **narrows view** (example). Phase 2. |
 | Projectile art | **Plain rectangles**, maybe a "trace" animation for light flair. |
+| Dodge model v3 (2026-07-25, after playtest) | Collision-escape dodging **felt bad** — "you 'dodge' something but when you snap back you collide into it." Now: **reward dodging at the right time** — a correctly-directed, correctly-timed dodge *disables* the projectile (it ghosts through at `ghost_alpha`; user may set 0 to vanish). Movement is a small cosmetic nudge. **Direction must match the lane** (user chose this over timing-only): sidestep overheads, jump body shots, duck head shots — table in `player.gd` `LANE_ANSWERS`. |
 
 ## Still open
 

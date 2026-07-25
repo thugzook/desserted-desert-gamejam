@@ -2,10 +2,16 @@ class_name Projectile
 extends Area2D
 ## Telegraph in place, then fly at where the player was. Configured entirely by a ProjectileData.
 
+## Which direction this shot attacks from — the player's LANE_ANSWERS table maps
+## each lane to the dodge direction that beats it.
+enum Lane { ABOVE, LEFT, RIGHT, HEAD_LEFT, HEAD_RIGHT }
+
 var data: ProjectileData
+var lane: Lane = Lane.ABOVE
 var direction := Vector2.ZERO
 var telegraph_left := 0.0
 var deflected := false
+var dodged := false
 ## Distance from the screen centre past which this cleans itself up.
 ## Handed over by the Spawner in setup() so the number lives on one Inspector.
 var despawn_radius := 1500.0
@@ -17,8 +23,9 @@ var _pulse: Tween
 
 
 ## Called by the Spawner BEFORE add_child, so _ready() has everything it needs.
-func setup(attack: ProjectileData, from: Vector2, toward: Vector2, despawn_at: float) -> void:
+func setup(attack: ProjectileData, in_lane: Lane, from: Vector2, toward: Vector2, despawn_at: float) -> void:
 	data = attack
+	lane = in_lane
 	position = from
 	direction = (toward - from).normalized()
 	telegraph_left = attack.telegraph_time
@@ -68,6 +75,19 @@ func deflect() -> void:
 	data.speed *= data.deflect_speed_multiplier
 	var spin := create_tween()
 	spin.tween_property(self, "rotation", rotation + TAU, 0.4)
+
+
+## Dodged fair and square: give up on hurting anyone, fade, and coast on through.
+## (ghost_alpha 0 on the .tres makes dodged shots vanish outright.)
+func ghost() -> void:
+	if dodged or deflected:
+		return
+	dodged = true
+	# Same rule as deflect(): we're inside the player's area_entered dispatch,
+	# where direct collision-flag writes are silently blocked.
+	set_deferred("monitoring", false)
+	set_deferred("monitorable", false)
+	sprite.modulate.a = data.ghost_alpha
 
 
 ## Telegraph over. The blink must STOP here — a solid rectangle is the cue that

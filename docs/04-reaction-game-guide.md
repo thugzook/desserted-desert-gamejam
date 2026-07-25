@@ -8,7 +8,7 @@ Physiology sets a hard floor on how fast anyone can respond:
 
 - Simple visual reaction (see it → press one known button): median **~273ms** (Human Benchmark dataset).
 - Audio is **~30–50ms faster** than visual — a reason to give every attack a sound (§2).
-- **Our game is harder than that**: even though collision decides everything, the player still has to *choose* — which of four directions clears the incoming attack, or whether to parry instead. That's a multi-choice decision, not a single known button, and multi-choice studies put it at **320–530ms** (arXiv 2305.17180). The numbers hold; only the reason changed (v1 asked "which of 5 responses matches this attack type?", v2 asks "which way is out of the way?").
+- **Our game is harder than that**: the player has to *choose* — read the lane, recall its answer (sidestep overheads, jump body shots, duck head shots — `LANE_ANSWERS`), or parry instead. That's a multi-choice decision, not a single known button, and multi-choice studies put it at **320–530ms** (arXiv 2305.17180). The v3 direction rule makes this the game's core skill test, so these numbers are load-bearing: telegraphs must budget for *recognition + recall*, not just reflex.
 - Design formula (GDKeys "Anatomy of an Attack"): minimum telegraph = reaction time + the player action's own startup + a difficulty buffer. And that minimum is a *hard-mode floor*.
 
 **Our defaults:** the reaction budget is the telegraph plus the flight time from spawn to the player. Aim for ≥ **600–800ms** early game and **never below ~400ms** at any difficulty. In `ProjectileData`: `telegraph_time` **0.6–0.9** early, and never below **~0.4** (§6, rule 5) — that floor is physiological, not a difficulty setting.
@@ -48,7 +48,7 @@ Two Sekiro tricks worth stealing (both cheap):
 - **Fail-soft:** a missed deflect degrades to a *block* (reduced damage), not a clean hit. Stretch goal for us: late parry against a parryable attack = "blocked" for half damage.
 - **Anti-mash:** the window shrinks if you spam the button. Only add this if playtests show spam trivializes parrying.
 
-**Our defaults:** `parry_window 0.15` (9 frames — tight-but-fair). Dodges are **positional, not frame-perfect**: your hurtbox physically leaves the projectile's path, so the effective window is however long you're out there — `dodge_out_time + dodge_hang_time + dodge_return_time` (~340ms at default settings), and `dodge_hang_time` is the knob that widens it. Jam players get one 2-minute session with zero practice: **err one tier more generous than feels right to you** — after a week of testing your own game, you are the worst possible difficulty judge.
+**Our defaults:** `parry_window 0.15` (9 frames — tight-but-fair). Dodges are a **timed window, not frame-perfect**: the dodge is active for `dodge_out_time + dodge_hang_time + dodge_return_time` (~340ms at defaults — "generous" tier above, on purpose, because the direction rule already adds a read cost), and `dodge_hang_time` is the knob that widens it. A correctly-directed dodge anywhere in that window neutralizes the shot; a wrong direction fails no matter the timing. Jam players get one 2-minute session with zero practice: **err one tier more generous than feels right to you** — after a week of testing your own game, you are the worst possible difficulty judge.
 
 Sources: https://sekiroshadowsdietwice.wiki.fextralife.com/Deflection · https://wiki.supercombo.gg/w/Street_Fighter_3:_3rd_Strike/System · https://cuphead.wiki.gg/wiki/Parry_Slap
 

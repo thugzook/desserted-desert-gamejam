@@ -54,7 +54,7 @@ Follow the official GDScript style guide (https://docs.godotengine.org/en/stable
 
 ## Architecture invariants
 
-- **Dodging is collision, never matching.** The hurtbox moves; if it moved far enough, nothing fires. Never reintroduce a `dodge_type`-vs-player-state comparison.
+- **Dodging is a timed window + one visible rule table (v3, user decision 2026-07-25).** A dodge neutralizes an arriving projectile only if its direction is in `LANE_ANSWERS[lane]` (`player.gd` — the ONLY place the rule may live). The collider **never moves**; the sprite's nudge is pure presentation. Don't scatter matching logic anywhere else, and don't reintroduce physical-escape dodging — playtesting killed it (snap-back into the projectile felt terrible).
 - **Parry is a timer, not a state.** `parry_time` must never touch `state` — that's what makes parrying mid-dodge work for free.
 - Player movement state is **`enum State { HOME, DODGING, HIT, DEAD }`** in `player.gd`. No node-based state machines (rationale: `docs/05` §1).
 - Exactly **two autoloads**: `Events` (signal bus) and `Game` (run state + timer). No new autoloads without asking.

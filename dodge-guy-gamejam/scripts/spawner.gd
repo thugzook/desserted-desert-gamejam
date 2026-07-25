@@ -18,22 +18,27 @@ extends Node2D
 @export var min_interval := 0.45
 ## How long the ramp from start_interval to min_interval takes.
 @export var ramp_seconds := 90.0
-
-## Where an attack can come from. Every lane is axis-aligned, so each one has a
-## clean answer: ABOVE falls straight down your column (sidestep it — ducking
-## keeps you in its path), LEFT/RIGHT fly at body height, HEAD_* fly at head
-## height so a duck (S) passes clean under them.
-enum Lane { ABOVE, LEFT, RIGHT, HEAD_LEFT, HEAD_RIGHT }
+## Hard cap on threatening shots on screen at once — YOUR density lever. The
+## spawner holds fire at the cap (and fires the moment a slot frees). Dodged,
+## parried, and despawned shots don't count against it.
+@export var max_alive := 6
 
 @export_group("Placement")
 ## How far off-screen attacks appear.
 @export var spawn_radius := 720.0
-## TUNE: which lanes are in the deck. Duplicate an entry to make that lane more
-## common (e.g. two ABOVEs = overheads twice as likely). Remove one to retire it.
-@export var lanes: Array[Lane] = [Lane.ABOVE, Lane.LEFT, Lane.RIGHT, Lane.HEAD_LEFT, Lane.HEAD_RIGHT]
-## How far above the player's center "head height" is, in pixels. Must stay inside
-## the TOP HALF of the 44px hurtbox (roughly -8 to -20): too high and head shots
-## whiff a standing player, too low and they stop reading as "duck this".
+## TUNE: which lanes are in the deck (see Projectile.Lane — the dodge that beats
+## each lane lives in player.gd's LANE_ANSWERS). Duplicate an entry to make that
+## lane more common (e.g. two ABOVEs = overheads twice as likely). Remove one to retire it.
+@export var lanes: Array[Projectile.Lane] = [
+	Projectile.Lane.ABOVE,
+	Projectile.Lane.LEFT,
+	Projectile.Lane.RIGHT,
+	Projectile.Lane.HEAD_LEFT,
+	Projectile.Lane.HEAD_RIGHT,
+]
+## How far above the player's center "head height" is, in pixels. With rule-based
+## dodging this is pure presentation — it just has to READ as "at the head":
+## roughly -8 to -20 for the 44px placeholder box.
 @export var head_offset := -18.0
 ## How far a shot travels from the screen centre before it deletes itself.
 ## Must comfortably exceed spawn_radius or attacks vanish before they arrive.
@@ -46,9 +51,19 @@ func _physics_process(delta: float) -> void:
 	if Game.state != Game.State.PLAYING or attacks.is_empty() or player == null:
 		return
 	_next_in -= delta
-	if _next_in <= 0.0:
+	if _next_in <= 0.0 and _alive_count() < max_alive:
+		# At the cap, _next_in stays ≤ 0, so we fire the instant a slot frees.
 		_spawn()
 		_next_in = current_interval()
+
+
+## Threatening shots currently on screen (ghosted/deflected ones are done fighting).
+func _alive_count() -> int:
+	var n := 0
+	for child in get_children():
+		if child is Projectile and not child.dodged and not child.deflected:
+			n += 1
+	return n
 
 
 ## Linear ramp from start_interval down to min_interval over ramp_seconds.
@@ -60,32 +75,30 @@ func current_interval() -> float:
 
 func _spawn() -> void:
 	var attack: ProjectileData = attacks.pick_random()
-	var lane: Lane = lanes.pick_random()
+	var lane: Projectile.Lane = lanes.pick_random()
 	var home := player.home_position
 
-	# Anchored to home_position, not the player's CURRENT position: attacks commit
-	# to where you live, so moving away is what saves you. Directions are axis-
-	# aligned (never aimed at the player) so a head-height shot STAYS at head
-	# height — that's what makes ducking under it possible.
+	# Anchored to home_position: every lane is a fixed, axis-aligned approach so
+	# the player can learn each one's answer (LANE_ANSWERS in player.gd decides).
 	var from: Vector2
 	var toward: Vector2
 	match lane:
-		Lane.ABOVE:
+		Projectile.Lane.ABOVE:
 			from = home + Vector2(0.0, -spawn_radius)
 			toward = home
-		Lane.LEFT:
+		Projectile.Lane.LEFT:
 			from = home + Vector2(-spawn_radius, 0.0)
 			toward = home
-		Lane.RIGHT:
+		Projectile.Lane.RIGHT:
 			from = home + Vector2(spawn_radius, 0.0)
 			toward = home
-		Lane.HEAD_LEFT:
+		Projectile.Lane.HEAD_LEFT:
 			from = home + Vector2(-spawn_radius, head_offset)
-			toward = from + Vector2.RIGHT  # horizontal — passes over a ducked player
-		Lane.HEAD_RIGHT:
+			toward = from + Vector2.RIGHT  # horizontal — reads as "at the head"
+		Projectile.Lane.HEAD_RIGHT:
 			from = home + Vector2(spawn_radius, head_offset)
 			toward = from + Vector2.LEFT
 
 	var projectile: Projectile = projectile_scene.instantiate()
-	projectile.setup(attack, from, toward, despawn_radius)
+	projectile.setup(attack, lane, from, toward, despawn_radius)
 	add_child(projectile)

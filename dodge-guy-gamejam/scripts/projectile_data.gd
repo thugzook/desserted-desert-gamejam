@@ -17,6 +17,11 @@ extends Resource
 @export var color := Color(0.95, 0.85, 0.6)
 @export var size := Vector2(56.0, 18.0)
 
+@export_group("Dodge Payoff")
+## How visible a successfully-dodged shot stays as it coasts through you.
+## 0.25 = faint ghost. 0 = it disappears the instant you dodge it.
+@export var ghost_alpha := 0.25
+
 @export_group("Parry Payoff")
 ## How much faster a deflected shot flies back. Higher = a parry feels more violent.
 @export var deflect_speed_multiplier := 2.0

@@ -89,22 +89,29 @@ Main (Node2D) ................. main.gd — start/restart, holds the pieces
 
 ---
 
-## 4. The core mechanic: dodging is collision, not matching
+## 4. The core mechanic (v3): dodge = right time + right direction
 
-**Dodging requires zero code.** The player's hurtbox physically moves out of the way. If it moved far enough, the projectile's `area_entered` never fires and nothing happens — there is no "did they dodge correctly?" check anywhere in the codebase.
+> **History:** v1 matched attack types to player states (never built). v2 made dodging pure collision — physically move the hurtbox out of the way. Playtesting killed v2: you'd dodge the projectile, then **snap back into it**, which felt like being punished for succeeding. v3 (user decision, 2026-07-25) keeps what felt good — the read-and-react — and makes the reward explicit.
 
-> This is the change from v1, which matched a `dodge_type` on the attack against the player's state. That system couldn't answer "what if I jump into an unavoidable mix of projectiles?" — this one doesn't have to ask.
-
-Everything that *does* happen on contact lives in one function:
+**A dodge is a timed window with a direction rule.** The player's collider **never moves** (only the sprite nudges, `dodge_distance` — pure presentation). Every projectile therefore reaches the player and gets judged in one function:
 
 ```
-projectile touches player
-  → parry window active AND attack is parryable?  → PARRIED  (refund stamina, deflect it)
+projectile reaches player
+  → parry active AND attack parryable?             → PARRIED  (refund stamina, deflect it)
+  → dodging AND direction beats this lane?         → DODGED   (shot ghosts through, harmless)
   → invincibility frames still running?            → ignored
   → otherwise                                      → HIT      (−1 heart, i-frames start)
 ```
 
-Three branches, one place to look when you ask "why did that hit me?"
+"Direction beats this lane" is one editable table — `LANE_ANSWERS` in `player.gd`:
+
+| Lane | Correct dodge |
+|---|---|
+| `ABOVE` (falls down your column) | LEFT or RIGHT — sidestep |
+| `LEFT` / `RIGHT` (body height) | UP — jump it |
+| `HEAD_LEFT` / `HEAD_RIGHT` (head height) | DOWN — duck it |
+
+Four branches, one rulebook, one place to look when you ask "why did that hit me?"
 
 ## 5. Player state: one enum + two timers
 
@@ -125,16 +132,17 @@ var iframe_time :=  0.0   # counts down after a hit
 | `HIT` | taking damage (cancels the dodge) | recovery tween returns you home |
 | `DEAD` | HP reaches 0 | never — restart reloads the scene |
 
-### The dodge: out → hang → back
+### The dodge: out → hang → back (= the active window)
 
-Per the spec, a dodge is **snappy dash-and-return**: move fast to the offset position, *hang there*, snap back home. The whole choreography is one Tween whose three steps map 1:1 to three Inspector numbers:
+The sprite nudges out, hangs, and snaps back — one Tween, three Inspector numbers — and **their sum is the dodge's active window**: any correctly-laned projectile arriving inside it is dodged.
 
 ```
 dodge_out_time  ──▶  dodge_hang_time  ──▶  dodge_return_time
    (dash out)          (hang there)          (snap home)
+   └──────────── the ACTIVE WINDOW (~0.34s default) ────────────┘
 ```
 
-The hang is the window where you're actually out of the projectile's path. Longer hang = more forgiving. This is your single most important feel knob.
+The collider stays home the whole time (`_start_dodge` tweens `$Sprite`, never the Area2D) — that's deliberate, so the `LANE_ANSWERS` rule is the *only* dodge authority and a lucky nudge can't silently bypass it. `dodge_hang_time` is still the forgiveness knob — it's the heart of the window. `dodge_distance` is now pure looks; keep it small enough to read as a flinch.
 
 ### Parry: a window, not a state
 
@@ -203,7 +211,7 @@ Everything below is an Inspector field. **Godot's physics runs at 60 ticks/secon
 
 | Group | Knobs | Turn it up to… |
 |---|---|---|
-| **Dodge Feel** | `dodge_distance`, `dodge_out_time`, `dodge_hang_time`, `dodge_return_time`, `dodge_out_trans`, `dodge_return_trans`, `dodge_out_ease`, `dodge_return_ease` | move further / dash slower / **hang longer (more forgiving)** / return slower. The `*_trans` and `*_ease` dropdowns are the easing curve — this is what "snappy" actually is. |
+| **Dodge Feel** | `dodge_distance` (cosmetic nudge size), `dodge_out_time`, `dodge_hang_time`, `dodge_return_time` (**their sum = the active dodge window**), `dodge_out_trans`, `dodge_return_trans`, `dodge_out_ease`, `dodge_return_ease` | bigger flinch / dash slower / **hang longer = wider window (more forgiving)** / return slower. The `*_trans`/`*_ease` dropdowns are the easing — that's what "snappy" is. The rulebook itself is `LANE_ANSWERS` at the top of `player.gd`. |
 | **Parry** | `parry_window`, `parry_recovery`, `parry_stamina_refund` | widen the success window / lengthen the whiff punishment / pay out more |
 | **Stamina** | `max_stamina`, `dodge_stamina_cost`, `stamina_regen`, `stamina_regen_delay` | more dodges before empty / cheaper dodges / faster recovery |
 | **Health** | `max_hp`, `iframe_time`, `hit_recover_time`, `hit_recover_trans` | more hearts / longer mercy invincibility / how the stagger back home reads |
@@ -215,9 +223,10 @@ Everything below is an Inspector field. **Godot's physics runs at 60 ticks/secon
 
 | Knob | What it does |
 |---|---|
+| `max_alive` | **your density lever** — hard cap on threatening shots on screen at once. The spawner holds fire at the cap and fires the instant a slot frees. Dodged/parried shots don't count. |
 | `despawn_radius` | how far past the screen a missed attack flies before deleting itself. Keep it well above `spawn_radius`. |
-| `lanes` | **the deck of directions**: `ABOVE` (falls down your column — sidestep it), `LEFT`/`RIGHT` (body height), `HEAD_LEFT`/`HEAD_RIGHT` (head height — **duck under with S**). Duplicate an entry to make that lane more common; remove one to retire it. |
-| `head_offset` | how far above center "head height" is. Must stay in the top half of the hurtbox (≈ −8 to −20) or head shots whiff a standing player. |
+| `lanes` | **the deck of directions** (`Projectile.Lane`): duplicate an entry to make that lane more common; remove one to retire it. What beats each lane is `LANE_ANSWERS` in `player.gd` (§4). |
+| `head_offset` | where "head height" sits visually (≈ −8 to −20 for the placeholder box). Presentation only under v3 — the lane rule decides the dodge. |
 
 ### On each attack `.tres`
 
@@ -227,6 +236,7 @@ Everything below is an Inspector field. **Godot's physics runs at 60 ticks/secon
 | `speed`, `telegraph_time`, `damage`, `parryable` | the attack itself (see §8) |
 | `color`, `size` | its identity — how the player tells types apart |
 | `deflect_speed_multiplier` | how hard a parry sends it back. Higher = more power fantasy. |
+| `ghost_alpha` | how visible a **dodged** shot stays as it coasts through you. `0.25` = faint ghost, `0` = vanishes the instant you dodge it. |
 | `pulse_rate`, `pulse_min_alpha` | the telegraph flash: how fast it blinks and how faint it goes |
 
 **Starting values and the research behind them** (why parry ≈ 150 ms, why telegraphs ≥ 600 ms, why ties should favor you) are in `docs/04-reaction-game-guide.md`. Tune against that doc, not against instinct.
@@ -235,7 +245,7 @@ Everything below is an Inspector field. **Godot's physics runs at 60 ticks/secon
 
 Phase 1 code carries explicit markers. These are yours; the AI won't fill them without being asked:
 
-- `## FLAIR:` — a deliberately empty or minimal hook. `_on_dodge_start()`, `_on_parry_start()`, `_on_parry_success()`, `_on_hit()` on the player, and `_draw()` on the HUD's stamina arc. Each carries its own `## FLAIR:` line, so grepping the project for `## FLAIR:` lists them all.
+- `## FLAIR:` — a deliberately empty or minimal hook. `_on_dodge_start()`, `_on_dodge_success()`, `_on_parry_start()`, `_on_parry_success()`, `_on_hit()` on the player, and `_draw()` on the HUD's stamina arc. Each carries its own `## FLAIR:` line, so grepping the project for `## FLAIR:` lists them all.
 - `## TUNE:` — a number with a note about which direction changes what.
 - `resources/attacks/*.tres` — your attack designs. The three shipped with Phase 1 are placeholders to delete.
 

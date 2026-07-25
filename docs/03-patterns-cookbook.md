@@ -1,6 +1,8 @@
-# Patterns Cookbook (v2) — Phase 1 Code
+# Patterns Cookbook (v3) — Phase 1 Code
 
-Complete, runnable Phase 1 for **Godot 4.7**. Every file the prototype needs is here. Names match the contract in `02-architecture.md` §12.
+Complete, runnable Phase 1 for **Godot 4.7**, updated for the **v3 dodge model** (timed + lane-matched; see `02-architecture.md` §4). Names match the contract in `02-architecture.md` §12.
+
+> **The shipped code in `dodge-guy-gamejam/scripts/` is authoritative.** This cookbook mirrors it for reading and for future sessions; if the two ever disagree, trust the shipped file and fix the cookbook.
 
 Read `02-architecture.md` first — this is the *how*, that's the *why*.
 
@@ -24,6 +26,7 @@ signal player_hit(hp_left: int)
 signal player_died
 signal parried(projectile)
 signal dodged(direction: Vector2)
+signal projectile_dodged(projectile)                   ## A shot was cleanly dodged (right lane, right time).
 signal dodge_failed                                    ## Not enough stamina — cue a UI flash.
 signal stamina_changed(current: float, max_value: float)
 signal run_started
@@ -109,18 +112,26 @@ extends Area2D
 ## The player. Dodges by physically moving out of the way, parries with a timed
 ## window that works even mid-dodge, spends stamina to do it.
 ##
+## v3: a dodge is a TIMED WINDOW with a DIRECTION RULE. Press the right direction
+## for the incoming lane while it arrives → the shot is neutralized (ghosts
+## through you). The body's nudge is pure presentation — the collider never moves.
+## The rulebook is LANE_ANSWERS below: one table, edit freely.
+##
 ## TUNE: everything in the @export groups below. 60 physics ticks/sec, so
 ## frames / 60 = seconds. (5 frames = 0.08s, 9 frames = 0.15s, 12 frames = 0.20s)
 
 enum State { HOME, DODGING, HIT, DEAD }
 
 @export_group("Dodge Feel")
-## How far a dodge moves you: x = sideways, y = up/down. Bigger = clears more attacks.
-@export var dodge_distance := Vector2(180.0, 130.0)
-## Seconds to dash out (0.08 = 5 frames). Lower = snappier.
+## How far the BODY (sprite only) nudges: x = sideways, y = up/down. Pure
+## presentation — the hurtbox stays home and LANE_ANSWERS decides dodges, so
+## this is a look, not a reach. Keep it small enough to read as a flinch.
+@export var dodge_distance := Vector2(50.0, 40.0)
+## Seconds to dash out (0.08 = 5 frames). Lower = snappier. Out + hang + return
+## together are the ACTIVE WINDOW — dodge while a shot arrives and you've dodged it.
 @export var dodge_out_time := 0.08
-## Seconds you hang at the far position. THIS IS THE FORGIVENESS KNOB — the whole
-## time you're out here, attacks pass through empty space. Raise it if the game feels unfair.
+## Seconds you hang at the far position. THIS IS THE FORGIVENESS KNOB — the heart
+## of the active window. Raise it if the game feels unfair.
 @export var dodge_hang_time := 0.16
 ## Seconds to snap back home (0.10 = 6 frames).
 @export var dodge_return_time := 0.10
@@ -172,6 +183,17 @@ const ACTIONS := {
 	"dodge_down": Vector2.DOWN,
 }
 
+## TUNE (design rule, not a number): which dodge direction beats which lane.
+## The whole rulebook is this one table — "sidestep overheads, jump body shots,
+## duck head shots." Add a Vector2 to a list to give a lane a second answer.
+const LANE_ANSWERS := {
+	Projectile.Lane.ABOVE: [Vector2.LEFT, Vector2.RIGHT],
+	Projectile.Lane.LEFT: [Vector2.UP],
+	Projectile.Lane.RIGHT: [Vector2.UP],
+	Projectile.Lane.HEAD_LEFT: [Vector2.DOWN],
+	Projectile.Lane.HEAD_RIGHT: [Vector2.DOWN],
+}
+
 var state: State = State.HOME
 var hp := 0
 var stamina := 0.0
@@ -182,13 +204,16 @@ var iframe_left := 0.0
 var regen_block := 0.0
 var buffered := ""            # buffered input action name
 var buffer_left := 0.0
+var dodge_direction := Vector2.ZERO   # which way the current dodge went (valid while DODGING)
 var _tween: Tween
+var _sprite_home := Vector2.ZERO      # the sprite's resting local position
 
 @onready var sprite: ColorRect = $Sprite
 
 
 func _ready() -> void:
 	home_position = position
+	_sprite_home = sprite.position
 	hp = max_hp
 	stamina = max_stamina
 	Events.stamina_changed.emit(stamina, max_stamina)
@@ -261,15 +286,18 @@ func _consume_buffer() -> void:
 
 func _start_dodge(direction: Vector2) -> void:
 	state = State.DODGING
+	dodge_direction = direction
 	_spend_stamina(dodge_stamina_cost)
-	var target := home_position + direction * dodge_distance
 
-	# The whole dodge is these four lines: out, hang, back, done.
+	# Only the SPRITE moves — the collider stays home so every shot still reaches
+	# _resolve(), where the LANE_ANSWERS rule (not geometry) decides the outcome.
+	# The whole nudge is these four lines: out, hang, back, done.
+	var target := _sprite_home + direction * dodge_distance
 	_tween = create_tween()
-	_tween.tween_property(self, "position", target, dodge_out_time) \
+	_tween.tween_property(sprite, "position", target, dodge_out_time) \
 		.set_trans(dodge_out_trans).set_ease(dodge_out_ease)
 	_tween.tween_interval(dodge_hang_time)
-	_tween.tween_property(self, "position", home_position, dodge_return_time) \
+	_tween.tween_property(sprite, "position", _sprite_home, dodge_return_time) \
 		.set_trans(dodge_return_trans).set_ease(dodge_return_ease)
 	_tween.tween_callback(func() -> void: state = State.HOME)
 
@@ -289,13 +317,17 @@ func _on_area_entered(area: Area2D) -> void:
 		_resolve(area)
 
 
-## The ONLY place a hit is decided. Dodging isn't checked here — if you dodged,
-## the hurtbox wasn't here and this never ran.
+## The ONLY place contact is decided, in strict order:
+##   parried  →  dodged (right direction, right time)  →  i-frames  →  hit.
+## "Right direction" means dodge_direction is in LANE_ANSWERS for the shot's lane.
 func _resolve(projectile: Projectile) -> void:
 	if state == State.DEAD:
 		return
 	if is_parry_active() and projectile.data.parryable:
 		_parry_success(projectile)
+		return
+	if state == State.DODGING and dodge_direction in LANE_ANSWERS[projectile.lane]:
+		_dodge_success(projectile)
 		return
 	if iframe_left > 0.0:
 		return                                  # mercy invincibility
@@ -307,6 +339,12 @@ func _parry_success(projectile: Projectile) -> void:
 	projectile.deflect()
 	Events.parried.emit(projectile)
 	_on_parry_success(projectile)
+
+
+func _dodge_success(projectile: Projectile) -> void:
+	projectile.ghost()
+	Events.projectile_dodged.emit(projectile)
+	_on_dodge_success(projectile)
 
 
 func _take_damage(projectile: Projectile) -> void:
@@ -325,10 +363,10 @@ func _take_damage(projectile: Projectile) -> void:
 		Events.player_died.emit()
 		return
 
-	# The dodge is cancelled; slide home from wherever we were caught.
+	# The dodge nudge is cancelled; slide the sprite home from wherever it was.
 	state = State.HIT
 	_tween = create_tween()
-	_tween.tween_property(self, "position", home_position, hit_recover_time) \
+	_tween.tween_property(sprite, "position", _sprite_home, hit_recover_time) \
 		.set_trans(hit_recover_trans).set_ease(Tween.EASE_OUT)
 	_tween.tween_callback(func() -> void: state = State.HOME)
 
@@ -355,10 +393,14 @@ func _regen(delta: float) -> void:
 # --- your hooks -----------------------------------------------------------
 # These are called at the right moments and do nothing by default. Squash and
 # stretch, afterimages, particles, sound — put it here. Nothing else needs to
-# change. Grep the project for "## FLAIR:" to find all four.
+# change. Grep the project for "## FLAIR:" to find all five.
 
 ## FLAIR: fires the instant a dodge starts, with the direction you dodged.
 func _on_dodge_start(_direction: Vector2) -> void:
+	pass
+
+## FLAIR: a clean dodge — right direction, right time. The shot is ghosting past.
+func _on_dodge_success(_projectile: Projectile) -> void:
 	pass
 
 ## FLAIR: fires when parry is pressed — before you know if it lands. Wind-up cue.
@@ -400,6 +442,9 @@ extends Resource
 ## How hard a parry sends it back — its speed is multiplied by this on deflect.
 ## Higher = more power fantasy. 1.0 = it just turns around.
 @export var deflect_speed_multiplier := 2.0
+## How visible a successfully-DODGED shot stays as it coasts through you.
+## 0.25 = faint ghost. 0 = it disappears the instant you dodge it.
+@export var ghost_alpha := 0.25
 ## FLAIR: how the player tells this attack from the others, at a glance.
 @export var color := Color(0.95, 0.85, 0.6)
 @export var size := Vector2(56.0, 18.0)
@@ -424,10 +469,16 @@ class_name Projectile
 extends Area2D
 ## Telegraph in place, then fly at where the player was. Configured entirely by a ProjectileData.
 
+## Which direction this shot attacks from — the player's LANE_ANSWERS table maps
+## each lane to the dodge direction that beats it.
+enum Lane { ABOVE, LEFT, RIGHT, HEAD_LEFT, HEAD_RIGHT }
+
 var data: ProjectileData
+var lane: Lane = Lane.ABOVE
 var direction := Vector2.ZERO
 var telegraph_left := 0.0
 var deflected := false
+var dodged := false
 var despawn_radius := 1500.0                     # overwritten by the Spawner in setup()
 
 var _pulse: Tween
@@ -437,8 +488,9 @@ var _pulse: Tween
 
 
 ## Called by the Spawner BEFORE add_child, so _ready() has everything it needs.
-func setup(attack: ProjectileData, from: Vector2, toward: Vector2, despawn: float) -> void:
+func setup(attack: ProjectileData, in_lane: Lane, from: Vector2, toward: Vector2, despawn: float) -> void:
 	data = attack
+	lane = in_lane
 	position = from
 	direction = (toward - from).normalized()
 	telegraph_left = attack.telegraph_time
@@ -491,20 +543,33 @@ func deflect() -> void:
 	data.speed *= data.deflect_speed_multiplier
 	var spin := create_tween()
 	spin.tween_property(self, "rotation", rotation + TAU, 0.4)
+
+
+## Dodged fair and square: give up on hurting anyone, fade, and coast on through.
+## (ghost_alpha 0 on the .tres makes dodged shots vanish outright.)
+func ghost() -> void:
+	if dodged or deflected:
+		return
+	dodged = true
+	# Same rule as deflect(): we're inside the player's area_entered dispatch,
+	# where direct collision-flag writes are silently blocked.
+	set_deferred("monitoring", false)
+	set_deferred("monitorable", false)
+	sprite.modulate.a = data.ghost_alpha
 ```
 
 > `data.duplicate()` matters: `.tres` resources are **shared between every instance** that loads them. Mutating `data.speed` directly would permanently speed up every future copy of that attack.
 
 ---
 
-## 6. `Spawner` — difficulty is three numbers
+## 6. `Spawner` — difficulty is four numbers
 
 `scripts/spawner.gd`.
 
 ```gdscript
 class_name Spawner
 extends Node2D
-## Picks attacks and throws them at the player. Difficulty ramp = 3 numbers.
+## Picks attacks and throws them at the player. Difficulty = interval ramp + max_alive.
 
 @export var projectile_scene: PackedScene
 ## TUNE: your attack designs. Drag .tres files here.
@@ -518,26 +583,31 @@ extends Node2D
 @export var min_interval := 0.45
 ## How long the ramp from start_interval to min_interval takes.
 @export var ramp_seconds := 90.0
+## Hard cap on threatening shots on screen at once — YOUR density lever. The
+## spawner holds fire at the cap (and fires the moment a slot frees). Dodged,
+## parried, and despawned shots don't count against it.
+@export var max_alive := 6
+
+@export_group("Placement")
 ## How far off-screen attacks appear.
 @export var spawn_radius := 720.0
+## TUNE: the deck of directions (see Projectile.Lane — the dodge that beats each
+## lane lives in player.gd's LANE_ANSWERS). Duplicate an entry to make that lane
+## more common (two ABOVEs = overheads twice as likely). Remove one to retire it.
+@export var lanes: Array[Projectile.Lane] = [
+	Projectile.Lane.ABOVE,
+	Projectile.Lane.LEFT,
+	Projectile.Lane.RIGHT,
+	Projectile.Lane.HEAD_LEFT,
+	Projectile.Lane.HEAD_RIGHT,
+]
+## How far above the player's center "head height" is, in pixels. With rule-based
+## dodging this is pure presentation — it just has to READ as "at the head":
+## roughly -8 to -20 for the 44px placeholder box.
+@export var head_offset := -18.0
 ## How far past the screen a missed attack flies before it deletes itself.
 ## Must stay comfortably above spawn_radius or attacks vanish on arrival.
 @export var despawn_radius := 1500.0
-
-## Where an attack can come from. Axis-aligned lanes, each with a clean answer:
-## ABOVE falls straight down your column (sidestep — ducking keeps you in its
-## path), LEFT/RIGHT fly at body height, HEAD_* fly at head height so a duck (S)
-## passes clean under them.
-enum Lane { ABOVE, LEFT, RIGHT, HEAD_LEFT, HEAD_RIGHT }
-
-@export_group("Lanes")
-## TUNE: the deck of directions. Duplicate an entry to make that lane more common
-## (two ABOVEs = overheads twice as likely). Remove one to retire it.
-@export var lanes: Array[Lane] = [Lane.ABOVE, Lane.LEFT, Lane.RIGHT, Lane.HEAD_LEFT, Lane.HEAD_RIGHT]
-## How far above the player's center "head height" is, in pixels. Must stay inside
-## the TOP HALF of the 44px hurtbox (≈ -8 to -20): too high and head shots whiff a
-## standing player, too low and they stop reading as "duck this".
-@export var head_offset := -18.0
 
 var _next_in := 0.0
 
@@ -546,9 +616,19 @@ func _physics_process(delta: float) -> void:
 	if Game.state != Game.State.PLAYING or attacks.is_empty():
 		return
 	_next_in -= delta
-	if _next_in <= 0.0:
+	if _next_in <= 0.0 and _alive_count() < max_alive:
+		# At the cap, _next_in stays ≤ 0, so we fire the instant a slot frees.
 		_spawn()
 		_next_in = current_interval()
+
+
+## Threatening shots currently on screen (ghosted/deflected ones are done fighting).
+func _alive_count() -> int:
+	var n := 0
+	for child in get_children():
+		if child is Projectile and not child.dodged and not child.deflected:
+			n += 1
+	return n
 
 
 ## Linear ramp from start_interval down to min_interval over ramp_seconds.
@@ -560,38 +640,36 @@ func current_interval() -> float:
 
 func _spawn() -> void:
 	var attack: ProjectileData = attacks.pick_random()
-	var lane: Lane = lanes.pick_random()
+	var lane: Projectile.Lane = lanes.pick_random()
 	var home := player.home_position
 
-	# Anchored to home_position, not the player's CURRENT position: attacks commit
-	# to where you live, so moving away is what saves you. Directions are axis-
-	# aligned (never aimed at the player) so a head-height shot STAYS at head
-	# height — that's what makes ducking under it possible.
+	# Anchored to home_position: every lane is a fixed, axis-aligned approach so
+	# the player can learn each one's answer (LANE_ANSWERS in player.gd decides).
 	var from: Vector2
 	var toward: Vector2
 	match lane:
-		Lane.ABOVE:
+		Projectile.Lane.ABOVE:
 			from = home + Vector2(0.0, -spawn_radius)
 			toward = home
-		Lane.LEFT:
+		Projectile.Lane.LEFT:
 			from = home + Vector2(-spawn_radius, 0.0)
 			toward = home
-		Lane.RIGHT:
+		Projectile.Lane.RIGHT:
 			from = home + Vector2(spawn_radius, 0.0)
 			toward = home
-		Lane.HEAD_LEFT:
+		Projectile.Lane.HEAD_LEFT:
 			from = home + Vector2(-spawn_radius, head_offset)
-			toward = from + Vector2.RIGHT  # horizontal — passes over a ducked player
-		Lane.HEAD_RIGHT:
+			toward = from + Vector2.RIGHT  # horizontal — reads as "at the head"
+		Projectile.Lane.HEAD_RIGHT:
 			from = home + Vector2(spawn_radius, head_offset)
 			toward = from + Vector2.LEFT
 
 	var projectile: Projectile = projectile_scene.instantiate()
-	projectile.setup(attack, from, toward, despawn_radius)
+	projectile.setup(attack, lane, from, toward, despawn_radius)
 	add_child(projectile)
 ```
 
-Anchoring to `player.home_position` (not the player's *current* position) is deliberate: attacks commit to where you live, so moving away is what saves you. The lane geometry gives every attack exactly one "natural" answer (sidestep the overheads, duck the head shots, jump or step out of the body shots) while the collision system stays answer-agnostic — any dodge that clears the flight line still works.
+Anchoring to `player.home_position` keeps every lane a fixed, learnable approach. Under v3 the lane geometry is the *presentation* of the question; the answer key is `LANE_ANSWERS` in `player.gd` — sidestep the overheads, jump the body shots, duck the head shots.
 
 ---
 

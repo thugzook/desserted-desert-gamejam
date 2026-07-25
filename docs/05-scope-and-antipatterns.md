@@ -7,7 +7,7 @@ What we deliberately **won't** build, and the week's schedule. When a future ses
 | Tempting pattern | Where you saw it | Why it's overkill here | Do instead |
 |---|---|---|---|
 | Node-based state machine | topdown template `scripts/state_machine/` (154 + 94 lines + 25 state files) | Built for many entities/NPCs/props; our player needs 4 movement states | `enum State { HOME, DODGING, HIT, DEAD }` + two timers in `player.gd` |
-| Attack-type ↔ player-state matching | the v1 plan for this game | Can't answer "what if I jump into an unavoidable mix?"; forces every attack into a category | Collision decides it — the hurtbox moves, so dodging needs no code at all |
+| **Hidden/scattered** dodge-rule logic | v1's plan (implicit type↔state matching); near-miss of v3 | v2's "pure collision" dodge was tried and **felt bad** (snap-back into the shot you dodged), so v3 brought direction rules back *by user decision* — the antipattern now is letting those rules leak anywhere beyond one visible table | ALL dodge rules live in `LANE_ANSWERS` in `player.gd`. One table. If a dodge outcome can't be explained by that table + the timing window, it's a bug. |
 | Hand-authored wave sequences (`WaveData`) | the v1 plan for this game | Endless survival ramps continuously; authored sets are content work we don't have time for | Spawner ramp: `start_interval` → `min_interval` over `ramp_seconds` |
 | Threaded SceneManager with transitions | topdown `scripts/autoloads/SceneManager.gd` (~257 lines) | We have ~1 scene; loading is instant | `get_tree().reload_current_scene()`; if a menu scene ever exists, `change_scene_to_file()` |
 | Save system with save-groups + duck-typed `get_data/receive_data` | topdown `DataManager.gd` + `SaveFileManager.gd` | Nothing to save but one number | One `ConfigFile` for high score (cookbook §2, in `Game`) |
@@ -21,7 +21,7 @@ What we deliberately **won't** build, and the week's schedule. When a future ses
 | Custom sound manager | common tutorial-land invention | Indirection with no payoff at 10 sounds | `AudioStreamPlayer` per sound. Audio is Phase 2 — grab the free-asset links in cookbook §10 when you get there. |
 | Health as a framework | topdown `health_controller.gd` (state hooks, PackedScene bars) | One entity has HP | inline `hp` int on the player (cookbook 3) |
 
-The meta-rule: **the topdown template solves a genre we're not making.** We took its *ideas* (signal bus, resources-as-data, hitbox/hurtbox pairing, exported tunables) and left its *machinery*. Note the half we specifically did **not** take: its hurtboxes toggle on and off with entity *state*, which is the attack-vs-state matching we rejected in row 2.
+The meta-rule: **the topdown template solves a genre we're not making.** We took its *ideas* (signal bus, resources-as-data, hitbox/hurtbox pairing, exported tunables) and left its *machinery*. Historical footnote: its state-toggled hurtboxes are the ancestor of our v3 dodge rule — v2 rejected the idea, playtesting brought it back in disciplined form (one visible `LANE_ANSWERS` table, row 2).
 
 ## 2. The week (jam schedule)
 

@@ -1,7 +1,11 @@
 class_name Player
 extends Area2D
-## The player. Dodges by physically moving out of the way, parries with a timed
-## window that works even mid-dodge, spends stamina to do it.
+## The player. A dodge is a TIMED WINDOW with a DIRECTION RULE: press the right
+## direction for the incoming lane while it arrives and the projectile is
+## neutralized (it ghosts through you). The body's nudge is pure presentation —
+## the collider never moves. Parry works even mid-dodge. Everything costs stamina.
+##
+## The dodge rulebook is LANE_ANSWERS below — one table, edit freely.
 ##
 ## TUNE: everything in the @export groups below. 60 physics ticks/sec, so
 ## frames / 60 = seconds. (5 frames = 0.08s, 9 frames = 0.15s, 12 frames = 0.20s)
@@ -15,13 +19,27 @@ const ACTIONS := {
 	"dodge_down": Vector2.DOWN,
 }
 
+## TUNE (design rule, not a number): which dodge direction beats which lane.
+## The whole rulebook is this one table — "sidestep overheads, jump body shots,
+## duck head shots." Add a Vector2 to a list to give a lane a second answer.
+const LANE_ANSWERS := {
+	Projectile.Lane.ABOVE: [Vector2.LEFT, Vector2.RIGHT],
+	Projectile.Lane.LEFT: [Vector2.UP],
+	Projectile.Lane.RIGHT: [Vector2.UP],
+	Projectile.Lane.HEAD_LEFT: [Vector2.DOWN],
+	Projectile.Lane.HEAD_RIGHT: [Vector2.DOWN],
+}
+
 @export_group("Dodge Feel")
-## How far a dodge moves you: x = sideways, y = up/down. Bigger = clears more attacks.
-@export var dodge_distance := Vector2(180.0, 130.0)
-## Seconds to dash out (0.08 = 5 frames). Lower = snappier.
+## How far the BODY (sprite only) nudges: x = sideways, y = up/down. Pure
+## presentation — the hurtbox stays home and the LANE_ANSWERS rule decides dodges,
+## so this is a look, not a reach. Keep it small enough to read as a flinch.
+@export var dodge_distance := Vector2(50.0, 40.0)
+## Seconds to dash out (0.08 = 5 frames). Lower = snappier. Out + hang + return
+## together are the ACTIVE WINDOW — dodge while a shot arrives and you've dodged it.
 @export var dodge_out_time := 0.08
-## Seconds you hang at the far position. THIS IS THE FORGIVENESS KNOB — the whole
-## time you're out here, attacks pass through empty space. Raise it if the game feels unfair.
+## Seconds you hang at the far position. THIS IS THE FORGIVENESS KNOB — the heart
+## of the active window. Raise it if the game feels unfair.
 @export var dodge_hang_time := 0.16
 ## Seconds to snap back home (0.10 = 6 frames).
 @export var dodge_return_time := 0.10
@@ -76,13 +94,16 @@ var iframe_left := 0.0
 var regen_block := 0.0
 var buffered := ""            # buffered input action name
 var buffer_left := 0.0
+var dodge_direction := Vector2.ZERO   # which way the current dodge went (valid while DODGING)
 var _tween: Tween
+var _sprite_home := Vector2.ZERO      # the sprite's resting local position
 
 @onready var sprite: ColorRect = $Sprite
 
 
 func _ready() -> void:
 	home_position = position
+	_sprite_home = sprite.position
 	hp = max_hp
 	stamina = max_stamina
 	Events.stamina_changed.emit(stamina, max_stamina)
@@ -156,15 +177,18 @@ func _consume_buffer() -> void:
 
 func _start_dodge(direction: Vector2) -> void:
 	state = State.DODGING
+	dodge_direction = direction
 	_spend_stamina(dodge_stamina_cost)
-	var target := home_position + direction * dodge_distance
 
-	# The whole dodge is these four lines: out, hang, back, done.
+	# Only the SPRITE moves — the collider stays home so every shot still reaches
+	# _resolve(), where the LANE_ANSWERS rule (not geometry) decides the outcome.
+	# The whole nudge is these four lines: out, hang, back, done.
+	var target := _sprite_home + direction * dodge_distance
 	_tween = create_tween()
-	_tween.tween_property(self, "position", target, dodge_out_time) \
+	_tween.tween_property(sprite, "position", target, dodge_out_time) \
 		.set_trans(dodge_out_trans).set_ease(dodge_out_ease)
 	_tween.tween_interval(dodge_hang_time)
-	_tween.tween_property(self, "position", home_position, dodge_return_time) \
+	_tween.tween_property(sprite, "position", _sprite_home, dodge_return_time) \
 		.set_trans(dodge_return_trans).set_ease(dodge_return_ease)
 	_tween.tween_callback(func() -> void: state = State.HOME)
 
@@ -184,13 +208,17 @@ func _on_area_entered(area: Area2D) -> void:
 		_resolve(area as Projectile)
 
 
-## The ONLY place a hit is decided. Dodging isn't checked here — if you dodged,
-## the hurtbox wasn't here and this never ran.
+## The ONLY place contact is decided, in strict order:
+##   parried  →  dodged (right direction, right time)  →  i-frames  →  hit.
+## "Right direction" means dodge_direction is in LANE_ANSWERS for the shot's lane.
 func _resolve(projectile: Projectile) -> void:
 	if state == State.DEAD:
 		return
 	if is_parry_active() and projectile.data.parryable:
 		_parry_success(projectile)
+		return
+	if state == State.DODGING and dodge_direction in LANE_ANSWERS[projectile.lane]:
+		_dodge_success(projectile)
 		return
 	if iframe_left > 0.0:
 		return                                  # mercy invincibility
@@ -202,6 +230,12 @@ func _parry_success(projectile: Projectile) -> void:
 	projectile.deflect()
 	Events.parried.emit(projectile)
 	_on_parry_success(projectile)
+
+
+func _dodge_success(projectile: Projectile) -> void:
+	projectile.ghost()
+	Events.projectile_dodged.emit(projectile)
+	_on_dodge_success(projectile)
 
 
 func _take_damage(projectile: Projectile) -> void:
@@ -222,10 +256,10 @@ func _take_damage(projectile: Projectile) -> void:
 		Events.player_died.emit()
 		return
 
-	# Cancel any dodge in progress and slide home.
+	# Cancel any dodge nudge in progress and slide the sprite home.
 	state = State.HIT
 	_tween = create_tween()
-	_tween.tween_property(self, "position", home_position, hit_recover_time) \
+	_tween.tween_property(sprite, "position", _sprite_home, hit_recover_time) \
 		.set_trans(hit_recover_trans).set_ease(Tween.EASE_OUT)
 	_tween.tween_callback(func() -> void: state = State.HOME)
 
@@ -265,6 +299,11 @@ func _on_parry_start() -> void:
 
 ## FLAIR: a parry connected — the loudest moment in the game. Make it feel great.
 func _on_parry_success(_projectile: Projectile) -> void:
+	pass
+
+
+## FLAIR: a clean dodge — right direction, right time. The shot is ghosting past.
+func _on_dodge_success(_projectile: Projectile) -> void:
 	pass
 
 
