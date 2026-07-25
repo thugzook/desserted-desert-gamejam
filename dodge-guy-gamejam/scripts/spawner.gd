@@ -19,14 +19,22 @@ extends Node2D
 ## How long the ramp from start_interval to min_interval takes.
 @export var ramp_seconds := 90.0
 
+## Where an attack can come from. Every lane is axis-aligned, so each one has a
+## clean answer: ABOVE falls straight down your column (sidestep it — ducking
+## keeps you in its path), LEFT/RIGHT fly at body height, HEAD_* fly at head
+## height so a duck (S) passes clean under them.
+enum Lane { ABOVE, LEFT, RIGHT, HEAD_LEFT, HEAD_RIGHT }
+
 @export_group("Placement")
 ## How far off-screen attacks appear.
 @export var spawn_radius := 720.0
-## Start of the arc attacks come from, in degrees. 180 = straight left.
-## Godot's Y points down, so 180→360 is the TOP half — nothing comes up through the ground.
-@export var spawn_angle_from := 180.0
-## End of that arc, in degrees. 360 = straight right.
-@export var spawn_angle_to := 360.0
+## TUNE: which lanes are in the deck. Duplicate an entry to make that lane more
+## common (e.g. two ABOVEs = overheads twice as likely). Remove one to retire it.
+@export var lanes: Array[Lane] = [Lane.ABOVE, Lane.LEFT, Lane.RIGHT, Lane.HEAD_LEFT, Lane.HEAD_RIGHT]
+## How far above the player's center "head height" is, in pixels. Must stay inside
+## the TOP HALF of the 44px hurtbox (roughly -8 to -20): too high and head shots
+## whiff a standing player, too low and they stop reading as "duck this".
+@export var head_offset := -18.0
 ## How far a shot travels from the screen centre before it deletes itself.
 ## Must comfortably exceed spawn_radius or attacks vanish before they arrive.
 @export var despawn_radius := 1500.0
@@ -52,11 +60,32 @@ func current_interval() -> float:
 
 func _spawn() -> void:
 	var attack: ProjectileData = attacks.pick_random()
-	var angle := randf_range(deg_to_rad(spawn_angle_from), deg_to_rad(spawn_angle_to))
-	var from := player.home_position + Vector2.from_angle(angle) * spawn_radius
+	var lane: Lane = lanes.pick_random()
+	var home := player.home_position
 
-	# Aimed at home_position, not the player's CURRENT position: attacks commit to
-	# where you were, so moving away is what saves you.
+	# Anchored to home_position, not the player's CURRENT position: attacks commit
+	# to where you live, so moving away is what saves you. Directions are axis-
+	# aligned (never aimed at the player) so a head-height shot STAYS at head
+	# height — that's what makes ducking under it possible.
+	var from: Vector2
+	var toward: Vector2
+	match lane:
+		Lane.ABOVE:
+			from = home + Vector2(0.0, -spawn_radius)
+			toward = home
+		Lane.LEFT:
+			from = home + Vector2(-spawn_radius, 0.0)
+			toward = home
+		Lane.RIGHT:
+			from = home + Vector2(spawn_radius, 0.0)
+			toward = home
+		Lane.HEAD_LEFT:
+			from = home + Vector2(-spawn_radius, head_offset)
+			toward = from + Vector2.RIGHT  # horizontal — passes over a ducked player
+		Lane.HEAD_RIGHT:
+			from = home + Vector2(spawn_radius, head_offset)
+			toward = from + Vector2.LEFT
+
 	var projectile: Projectile = projectile_scene.instantiate()
-	projectile.setup(attack, from, player.home_position, despawn_radius)
+	projectile.setup(attack, from, toward, despawn_radius)
 	add_child(projectile)

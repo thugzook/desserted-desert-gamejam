@@ -216,7 +216,8 @@ Everything below is an Inspector field. **Godot's physics runs at 60 ticks/secon
 | Knob | What it does |
 |---|---|
 | `despawn_radius` | how far past the screen a missed attack flies before deleting itself. Keep it well above `spawn_radius`. |
-| `spawn_angle_from` / `spawn_angle_to` | **which arc attacks come from**, in degrees. Default 180–360 = the upper half (Y is down in Godot, and nothing comes up through the ground). Narrow it to focus the pressure. |
+| `lanes` | **the deck of directions**: `ABOVE` (falls down your column — sidestep it), `LEFT`/`RIGHT` (body height), `HEAD_LEFT`/`HEAD_RIGHT` (head height — **duck under with S**). Duplicate an entry to make that lane more common; remove one to retire it. |
+| `head_offset` | how far above center "head height" is. Must stay in the top half of the hurtbox (≈ −8 to −20) or head shots whiff a standing player. |
 
 ### On each attack `.tres`
 

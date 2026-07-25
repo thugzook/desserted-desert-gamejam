@@ -524,12 +524,20 @@ extends Node2D
 ## Must stay comfortably above spawn_radius or attacks vanish on arrival.
 @export var despawn_radius := 1500.0
 
-@export_group("Spawn Arc")
-## Which arc attacks come from, in degrees. Godot's Y points down, so 180–360 is
-## the upper half — nothing comes up through the ground. Narrow it to focus the
-## pressure (e.g. 225–315 = straight down only).
-@export var spawn_angle_from := 180.0
-@export var spawn_angle_to := 360.0
+## Where an attack can come from. Axis-aligned lanes, each with a clean answer:
+## ABOVE falls straight down your column (sidestep — ducking keeps you in its
+## path), LEFT/RIGHT fly at body height, HEAD_* fly at head height so a duck (S)
+## passes clean under them.
+enum Lane { ABOVE, LEFT, RIGHT, HEAD_LEFT, HEAD_RIGHT }
+
+@export_group("Lanes")
+## TUNE: the deck of directions. Duplicate an entry to make that lane more common
+## (two ABOVEs = overheads twice as likely). Remove one to retire it.
+@export var lanes: Array[Lane] = [Lane.ABOVE, Lane.LEFT, Lane.RIGHT, Lane.HEAD_LEFT, Lane.HEAD_RIGHT]
+## How far above the player's center "head height" is, in pixels. Must stay inside
+## the TOP HALF of the 44px hurtbox (≈ -8 to -20): too high and head shots whiff a
+## standing player, too low and they stop reading as "duck this".
+@export var head_offset := -18.0
 
 var _next_in := 0.0
 
@@ -552,17 +560,38 @@ func current_interval() -> float:
 
 func _spawn() -> void:
 	var attack: ProjectileData = attacks.pick_random()
-	# Default arc is the upper semicircle — the player stands on the ground, so
-	# nothing comes from below. Both ends are Inspector knobs.
-	var angle := randf_range(deg_to_rad(spawn_angle_from), deg_to_rad(spawn_angle_to))
-	var from := player.home_position + Vector2.from_angle(angle) * spawn_radius
+	var lane: Lane = lanes.pick_random()
+	var home := player.home_position
+
+	# Anchored to home_position, not the player's CURRENT position: attacks commit
+	# to where you live, so moving away is what saves you. Directions are axis-
+	# aligned (never aimed at the player) so a head-height shot STAYS at head
+	# height — that's what makes ducking under it possible.
+	var from: Vector2
+	var toward: Vector2
+	match lane:
+		Lane.ABOVE:
+			from = home + Vector2(0.0, -spawn_radius)
+			toward = home
+		Lane.LEFT:
+			from = home + Vector2(-spawn_radius, 0.0)
+			toward = home
+		Lane.RIGHT:
+			from = home + Vector2(spawn_radius, 0.0)
+			toward = home
+		Lane.HEAD_LEFT:
+			from = home + Vector2(-spawn_radius, head_offset)
+			toward = from + Vector2.RIGHT  # horizontal — passes over a ducked player
+		Lane.HEAD_RIGHT:
+			from = home + Vector2(spawn_radius, head_offset)
+			toward = from + Vector2.LEFT
 
 	var projectile: Projectile = projectile_scene.instantiate()
-	projectile.setup(attack, from, player.home_position, despawn_radius)
+	projectile.setup(attack, from, toward, despawn_radius)
 	add_child(projectile)
 ```
 
-Aiming at `player.home_position` (not the player's *current* position) is deliberate: attacks commit to where you were, so moving away is what saves you.
+Anchoring to `player.home_position` (not the player's *current* position) is deliberate: attacks commit to where you live, so moving away is what saves you. The lane geometry gives every attack exactly one "natural" answer (sidestep the overheads, duck the head shots, jump or step out of the body shots) while the collision system stays answer-agnostic — any dodge that clears the flight line still works.
 
 ---
 
