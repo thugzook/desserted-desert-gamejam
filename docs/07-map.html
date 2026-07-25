@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dodge Guy — Architecture Map</title>
+<style>
+  :root {
+    --bg: #f6f3ec; --panel: #ffffff; --ink: #2b2620; --muted: #7a715f;
+    --line: #e3dccc; --accent: #c05621; --accent-soft: #fdf0e3;
+    --good: #2f7d4f; --good-soft: #e6f2ea; --bad: #b3352e; --bad-soft: #f9e8e6;
+    --code-bg: #f0ebe0; --chip: #efe9da;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #171512; --panel: #201d18; --ink: #e8e2d4; --muted: #9a917e;
+      --line: #353026; --accent: #e07b3d; --accent-soft: #33261c;
+      --good: #6dbb8d; --good-soft: #1e2f25; --bad: #e08079; --bad-soft: #33201e;
+      --code-bg: #2a2620; --chip: #2c281f;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font: 16px/1.55 Georgia, 'Times New Roman', serif;
+    padding: 2.5rem 1rem 5rem;
+  }
+  main { max-width: 60rem; margin: 0 auto; }
+  h1 { font-size: 2rem; margin: 0 0 .2rem; }
+  h1 em { color: var(--accent); font-style: italic; }
+  .sub { color: var(--muted); margin: 0 0 2rem; font-style: italic; }
+  h2 {
+    font-size: 1.2rem; margin: 2.6rem 0 .9rem; padding-bottom: .35rem;
+    border-bottom: 2px solid var(--line); letter-spacing: .02em;
+  }
+  h2 .n { color: var(--accent); font-family: ui-monospace, Consolas, monospace; font-size: .9em; margin-right: .5em; }
+  code, .mono {
+    font: .84em ui-monospace, 'Cascadia Code', Consolas, monospace;
+    background: var(--code-bg); padding: .1em .35em; border-radius: 4px;
+  }
+  table { border-collapse: collapse; width: 100%; margin: .8rem 0; font-size: .95rem; }
+  th, td { text-align: left; padding: .45rem .7rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { font-size: .78rem; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+  .wrap { overflow-x: auto; }
+
+  /* scene tree diagram */
+  .board { display: grid; gap: 1rem; grid-template-columns: 1fr 1fr; margin: 1rem 0; }
+  @media (max-width: 44rem) { .board { grid-template-columns: 1fr; } }
+  .card {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+    padding: 1rem 1.1rem; box-shadow: 0 1px 3px rgba(0,0,0,.06);
+  }
+  .card h3 { margin: 0 0 .5rem; font-size: .8rem; text-transform: uppercase; letter-spacing: .1em; color: var(--muted); }
+  .tree { list-style: none; margin: 0; padding: 0; font-size: .92rem; }
+  .tree li { padding: .28rem 0 .28rem 1rem; border-left: 2px solid var(--line); margin-left: .4rem; }
+  .tree li.root { border-left: none; margin-left: 0; padding-left: 0; }
+  .tree .node { font-family: ui-monospace, Consolas, monospace; font-size: .88em; font-weight: bold; }
+  .tree .what { color: var(--muted); font-size: .88em; }
+  .star { color: var(--accent); font-weight: bold; }
+  .chip {
+    display: inline-block; background: var(--chip); border-radius: 99px;
+    padding: .05em .6em; font-size: .78em; color: var(--muted); margin-left: .35em;
+  }
+
+  /* resolve pipeline */
+  .pipe { display: flex; flex-wrap: wrap; gap: .5rem; align-items: stretch; margin: 1rem 0; }
+  .pipe .step {
+    flex: 1 1 10rem; border-radius: 10px; padding: .7rem .9rem; border: 1px solid var(--line);
+    background: var(--panel); position: relative; font-size: .92rem;
+  }
+  .pipe .step b { display: block; font-size: .8rem; letter-spacing: .08em; text-transform: uppercase; margin-bottom: .25rem; }
+  .step.parry b { color: var(--accent); } .step.parry { background: var(--accent-soft); }
+  .step.dodge b { color: var(--good); } .step.dodge { background: var(--good-soft); }
+  .step.hit b { color: var(--bad); } .step.hit { background: var(--bad-soft); }
+  .arrow { align-self: center; color: var(--muted); font-size: 1.3rem; }
+
+  .rule { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: .2rem 1.1rem .4rem; }
+  .kbd {
+    font: .82em ui-monospace, Consolas, monospace; border: 1px solid var(--line);
+    border-bottom-width: 3px; border-radius: 5px; padding: .05em .5em; background: var(--panel);
+  }
+  .recipes li { margin-bottom: .7rem; }
+  .note { color: var(--muted); font-size: .9rem; font-style: italic; }
+  .flow { color: var(--muted); font-size: .9rem; margin: .3rem 0 0; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Dodge Guy — <em>the map</em></h1>
+  <p class="sub">Where everything lives, what every knob does. Current as of the v3 dodge (timed + lane-matched). The Godot project is <code>dodge-guy-gamejam/</code>.</p>
+
+  <h2><span class="n">01</span>How a projectile is judged</h2>
+  <p>The hitbox <b>never moves</b> — every shot reaches the player and gets judged once, in <code>player.gd → _resolve()</code>, in this exact order:</p>
+  <div class="pipe">
+    <div class="step parry"><b>1 · Parried?</b> <span class="kbd">J</span> pressed within <code>parry_window</code> and the attack is <code>parryable</code> → deflected back at <code>deflect_speed_multiplier</code>×, stamina refunded.</div>
+    <div class="arrow">→</div>
+    <div class="step dodge"><b>2 · Dodged?</b> Mid-dodge <em>and</em> direction matches the lane (table below) → shot is <b>disabled</b>, ghosts through at <code>ghost_alpha</code>.</div>
+    <div class="arrow">→</div>
+    <div class="step"><b>3 · I-frames?</b> Still invincible from a recent hit → ignored.</div>
+    <div class="arrow">→</div>
+    <div class="step hit"><b>4 · Hit.</b> −1 heart, <code>iframe_time</code> of mercy starts.</div>
+  </div>
+  <p class="note">The dodge's active window = <code>dodge_out_time + dodge_hang_time + dodge_return_time</code> (~0.34s default). The body's hop is animation only.</p>
+
+  <h2><span class="n">02</span>The dodge rulebook <span class="note">— editable: <code>LANE_ANSWERS</code>, top of <code>scripts/player.gd</code></span></h2>
+  <div class="rule wrap">
+    <table>
+      <tr><th>Lane</th><th>Comes from</th><th>The answer</th></tr>
+      <tr><td><code>ABOVE</code></td><td>overhead, falls down your column</td><td><b>Sidestep</b> — <span class="kbd">A</span> or <span class="kbd">D</span></td></tr>
+      <tr><td><code>LEFT</code> / <code>RIGHT</code></td><td>horizontal, body height</td><td><b>Jump</b> — <span class="kbd">Space</span></td></tr>
+      <tr><td><code>HEAD_LEFT</code> / <code>HEAD_RIGHT</code></td><td>horizontal, head height</td><td><b>Duck</b> — <span class="kbd">S</span></td></tr>
+    </table>
+  </div>
+  <p class="note">Add a second Vector2 to any lane's list to give it two answers. Parry works on any lane if the attack is parryable.</p>
+
+  <h2><span class="n">03</span>The scene &amp; the plumbing</h2>
+  <div class="board">
+    <div class="card">
+      <h3>main.tscn — the game</h3>
+      <ul class="tree">
+        <li class="root"><span class="node">Main</span> <span class="chip">main.gd</span><br><span class="what">starts the run · Enter/R restarts</span></li>
+        <li><span class="node">Ground</span> <span class="what">— the line you stand on</span></li>
+        <li><span class="node">Player</span> <span class="chip">player.gd</span> <span class="star">⭐ LANE_ANSWERS + all feel knobs</span><br><span class="what">dodge rules · parry · stamina · hp — collider fixed, sprite nudges</span></li>
+        <li><span class="node">Spawner</span> <span class="chip">spawner.gd</span> <span class="star">⭐ max_alive · lanes · ramp</span><br><span class="what">picks a .tres + a lane, spawns projectiles</span></li>
+        <li><span class="node">Camera2D</span> <span class="what">— static (screen == world)</span></li>
+        <li><span class="node">HUD</span> <span class="chip">hud.gd</span> <span class="what">— timer · ×1.0 · hearts · game-over panel</span>
+          <ul class="tree"><li><span class="node">StaminaArc</span> <span class="chip">stamina_arc.gd</span> <span class="what">— the pips; <code>_draw()</code> is yours</span></li></ul>
+        </li>
+      </ul>
+      <p class="flow">Spawner → <code>projectile.tscn</code> (<span class="mono">projectile.gd</span>: telegraph → fly → judged) → Player</p>
+    </div>
+    <div class="card">
+      <h3>Always alive</h3>
+      <ul class="tree">
+        <li class="root"><span class="node">Events</span> <span class="chip">autoload/events.gd</span><br><span class="what">signal bus: parried · projectile_dodged · player_hit · stamina_changed · run_started/ended · dodge_failed…</span></li>
+        <li class="root" style="margin-top:.6rem"><span class="node">Game</span> <span class="chip">autoload/game.gd</span><br><span class="what">run state · survival timer (= your score) · best time (saved)</span></li>
+      </ul>
+      <h3 style="margin-top:1rem">Your data</h3>
+      <ul class="tree">
+        <li class="root"><span class="node">resources/attacks/*.tres</span> <span class="star">⭐ attack designs</span><br><span class="what">speed · telegraph_time · damage · parryable · color · size · ghost_alpha · deflect ×</span></li>
+      </ul>
+      <p class="flow">New attack = new .tres. Never code.</p>
+    </div>
+  </div>
+
+  <h2><span class="n">04</span>Recipes for manual edits</h2>
+  <ol class="recipes">
+    <li><b>One projectile type only:</b> open <code>scenes/main.tscn</code> → click <b>Spawner</b> → Inspector → <code>Attacks</code> → array size 1 (keep zippy). Optionally delete <code>chonker.tres</code> / <code>spiker.tres</code> in the FileSystem dock — nothing else references them.</li>
+    <li><b>How many at once:</b> Spawner → <code>max_alive</code> (hard cap; dodged/parried shots don't count). <b>Pace:</b> <code>start_interval</code> → <code>min_interval</code> over <code>ramp_seconds</code>. <b>Speed:</b> <code>zippy.tres → speed</code> (px/sec — 300 readable, 700 scary).</li>
+    <li><b>Change what beats what:</b> edit <code>LANE_ANSWERS</code> in <code>player.gd</code>.</li>
+    <li><b>Dodge feel:</b> Player → Dodge Feel — the window (<code>*_time</code>s, hang = forgiveness), the flinch (<code>dodge_distance</code>, looks only), the snap (<code>*_trans</code>/<code>*_ease</code> dropdowns).</li>
+    <li><b>Ghost look:</b> <code>.tres → ghost_alpha</code> — <code>0.25</code> faint pass-through, <code>0</code> instant vanish.</li>
+    <li><b>Lane mix:</b> Spawner → <code>lanes</code> — duplicate an entry to weight it, delete to retire it.</li>
+  </ol>
+
+  <h2><span class="n">05</span>Knob quick-reference</h2>
+  <div class="wrap">
+  <table>
+    <tr><th>Where</th><th>Knob</th><th>It controls</th></tr>
+    <tr><td rowspan="5"><b>Player</b></td><td><code>dodge_out/hang/return_time</code></td><td>the active dodge window (sum ≈ 0.34s; hang is the forgiveness knob)</td></tr>
+    <tr><td><code>dodge_distance</code>, <code>*_trans/_ease</code></td><td>the look of the flinch — cosmetic</td></tr>
+    <tr><td><code>parry_window / parry_recovery / parry_stamina_refund</code></td><td>parry success window · whiff punishment · payout</td></tr>
+    <tr><td><code>max_stamina / dodge_stamina_cost / stamina_regen(_delay)</code></td><td>how many dodges you get and how fast they come back</td></tr>
+    <tr><td><code>max_hp / iframe_time / input_buffer</code></td><td>hearts · mercy invincibility · early-press leniency</td></tr>
+    <tr><td rowspan="3"><b>Spawner</b></td><td><code>max_alive</code></td><td><b>density</b> — max threatening shots at once</td></tr>
+    <tr><td><code>start_interval → min_interval / ramp_seconds</code></td><td>the whole difficulty curve</td></tr>
+    <tr><td><code>lanes / head_offset / spawn_radius / despawn_radius</code></td><td>the deck of directions · head-shot height (visual) · travel bounds</td></tr>
+    <tr><td><b>.tres</b></td><td><code>speed / telegraph_time / damage / parryable / color / size / ghost_alpha</code></td><td>one attack's design (telegraph never below ~0.4s)</td></tr>
+  </table>
+  </div>
+
+  <h2><span class="n">06</span>Flair spots — empty hooks that are yours</h2>
+  <p><code>player.gd</code>: <code>_on_dodge_start</code> · <b><code>_on_dodge_success</code></b> (a clean dodge — juice here) · <code>_on_parry_start</code> · <code>_on_parry_success</code> · <code>_on_hit</code><br>
+  <code>stamina_arc.gd</code>: <code>_draw()</code> · <code>projectile.gd</code>: the telegraph pulse · <code>spawner.gd</code>: the ramp curve.<br>
+  <span class="note">Grep the project for <code>## FLAIR:</code> to list them all.</span></p>
+
+  <p class="note" style="margin-top:2.5rem">Phase 1 → <b>you tune</b> → Phase 2 (upgrades · timer multiplier · juice · torch) → <b>you author</b> → Phase 3 (art · music · polish). Timing research lives in <code>docs/04-reaction-game-guide.md</code>.</p>
+</main>
+</body>
+</html>
