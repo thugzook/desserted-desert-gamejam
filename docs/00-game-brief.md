@@ -67,6 +67,7 @@ The mock shows, checked against the intent brief:
 4. **Parry** — instant reward on success (stamina back); animation lock on failure (exposed, possibly hit). Usable mid-dodge.
 5. **Stamina system** — dodge costs it, successful parry refunds it, regenerates over time. Radial pips around the character.
 6. **Projectiles** — plain rectangles (maybe a "trace" animation for flair), collision-based hits, simple repeating spawn pattern.
+7. **High-score persistence** (shipped with the prototype — trivial via ConfigFile).
 
 **Done when:** you can play a full run — survive, dodge, parry, die, see your time, restart — and every number is tweakable in the Inspector.
 
@@ -76,7 +77,6 @@ The mock shows, checked against the intent brief:
 - **Timer multiplier** — appears next to the timer; rises **through upgrades only** (no direct control). This is where "fly closer to the sun" becomes real.
 - **Satisfying parry/movement** — game feel pass: hitstop, shake, SFX, animation snap (docs/03 §9).
 - **Light system** — e.g. a torch that narrows your view (per user: phase 2 stuff).
-- High-score persistence (trivial — GameManager ConfigFile).
 
 **Done when:** a run's difficulty is meaningfully shaped by the player's upgrade choices.
 
@@ -97,7 +97,7 @@ The v1 framework docs were written for a lane/state-matching game. What this spe
 | States DUCK/JUMP/SLIDE_LEFT/SLIDE_RIGHT; `STATE_BEATS_DODGE` matching in `resolve_attack()` | **Delete dodge-type matching.** Player has a position + hurtbox; dodges are short directional moves (up/down/left/right); hit = hurtbox overlap, dodge = simply not being there |
 | Actions are committed states; inputs only from IDLE | **Parry must be usable during a dodge** (e.g. airborne). Parry becomes an overlay action, not an exclusive state |
 | `AttackData.dodge_type` drives resolution | `dodge_type` becomes (at most) a **spawn-direction/aim hint**; resolution is pure collision |
-| Win = survive authored waves | **Endless survival; score = timer value.** Waves/`WaveData` survive as the pattern-authoring format, ramping per docs/04 §5 |
+| Win = survive authored waves | **Endless survival; score = timer value.** Replaced by the Spawner's continuous ramp (`start_interval` → `min_interval` over `ramp_seconds`); authored patterns are a Phase 3 idea, per docs/04 §5 |
 | No resource systems | **Stamina** (dodge costs, successful parry refunds, regen over time) + **timer multiplier** + **upgrade/item choices** |
 | Player fixed at screen center | Per the mock: player on a **ground line at bottom-center**; up-dodge = a jump arc (still animation/tween-driven — the "no physics gravity" invariant can hold) |
 

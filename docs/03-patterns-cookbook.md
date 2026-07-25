@@ -1,568 +1,701 @@
-# Patterns Cookbook
+# Patterns Cookbook (v2) — Phase 1 Code
 
-Copy-paste-ready GDScript for every system in the game, written for **Godot 4.7**. Each pattern says where it came from, why it's shaped this way, and what to tweak. Names match the contract in `02-architecture.md` §7 exactly.
+Complete, runnable Phase 1 for **Godot 4.7**. Every file the prototype needs is here. Names match the contract in `02-architecture.md` §12.
 
-Contents:
-1. [Player state machine](#1-player-state-machine-playergd)
-2. [Input buffer](#2-input-buffer)
-3. [Attack resolution (hurtbox idea)](#3-attack-resolution)
-4. [Health (inline vs component)](#4-health)
-5. [Signal bus](#5-signal-bus-autoloadeventsgd)
-6. [Attack projectile](#6-attack-projectile-attackgd)
-7. [Attack data + spawner](#7-attackdata-wavedata-and-the-spawner)
-8. [Game manager, HUD, restart](#8-game-manager-hud-game-overrestart)
-9. [Juice pack](#9-juice-pack-hitstop-screenshake-flash)
-10. [Audio](#10-audio)
+Read `02-architecture.md` first — this is the *how*, that's the *why*.
+
+Contents: [Events](#1-events--the-signal-bus) · [Game](#2-game--run-state--timer) · [Player](#3-player--the-file-youll-tune-most) · [ProjectileData](#4-projectiledata--an-attack-type) · [Projectile](#5-projectile) · [Spawner](#6-spawner--difficulty-is-three-numbers) · [HUD](#7-hud) · [Main](#8-main--start--restart) · [Input map](#9-input-map--project-settings) · [Phase 2 seams](#10-phase-2-seams)
 
 ---
 
-## 1. Player state machine (`player.gd`)
+## 1. `Events` — the signal bus
 
-**Source:** replaces the topdown template's node-based `StateMachine` (see doc 02 §6 for why). Structure inspired by the platformer's "everything visible in one file" style.
+`autoload/events.gd`. Register in Project Settings → Globals as **`Events`**.
 
-The complete player. Patterns 2–4 are embedded in it and explained separately after.
-
-```gdscript
-class_name Player
-extends Area2D
-## The player: a fixed sprite that ducks, jumps, slides, and parries incoming attacks.
-## All timing is tunable in the Inspector — see the Action Durations group.
-
-enum PlayerState { IDLE, DUCK, JUMP, SLIDE_LEFT, SLIDE_RIGHT, PARRY, HIT, DEAD }
-
-@export_group("Action Durations")
-@export var duck_duration := 0.4     ## Seconds the duck lasts (also the dodge window for high attacks).
-@export var jump_duration := 0.5     ## Seconds the jump lasts.
-@export var slide_duration := 0.4    ## Seconds a slide lasts.
-@export var parry_duration := 0.3    ## Total parry animation time (committed, can't act).
-@export var parry_active_window := 0.15  ## Only the FIRST part of the parry deflects (see doc 04 §3).
-@export var hit_stun := 0.5          ## Seconds of stun + invincibility after being hit.
-@export_group("Feel")
-@export var input_buffer_window := 0.12  ## Early inputs within this window still count (doc 04 §4).
-@export_group("Health")
-@export var max_hp := 3
-
-# Maps input action names -> the state they trigger.
-const ACTIONS := {
-	"duck": PlayerState.DUCK,
-	"jump": PlayerState.JUMP,
-	"slide_left": PlayerState.SLIDE_LEFT,
-	"slide_right": PlayerState.SLIDE_RIGHT,
-	"parry": PlayerState.PARRY,
-}
-
-# Which player state dodges which attack type (states double as dodges).
-const STATE_BEATS_DODGE := {
-	PlayerState.DUCK: AttackData.DodgeType.DUCK,
-	PlayerState.JUMP: AttackData.DodgeType.JUMP,
-	PlayerState.SLIDE_LEFT: AttackData.DodgeType.SLIDE_LEFT,
-	PlayerState.SLIDE_RIGHT: AttackData.DodgeType.SLIDE_RIGHT,
-	PlayerState.PARRY: AttackData.DodgeType.PARRY,
-}
-
-var state: PlayerState = PlayerState.IDLE
-var state_time := 0.0        # seconds spent in the current state
-var hp := 0
-
-# --- input buffer (pattern 2) ---
-var buffered_action := ""
-var time_since_buffered := 999.0
-
-@onready var sprite: AnimatedSprite2D = $AnimatedSprite2D
-
-
-func _ready() -> void:
-	hp = max_hp
-	area_entered.connect(_on_area_entered)
-	_enter_state(PlayerState.IDLE)
-
-
-func _physics_process(delta: float) -> void:
-	state_time += delta
-	time_since_buffered += delta
-	if state == PlayerState.DEAD:
-		return
-	_capture_input()
-
-	match state:
-		PlayerState.IDLE:
-			_try_consume_buffer()
-		PlayerState.DUCK:
-			if state_time >= duck_duration: _enter_state(PlayerState.IDLE)
-		PlayerState.JUMP:
-			if state_time >= jump_duration: _enter_state(PlayerState.IDLE)
-		PlayerState.SLIDE_LEFT, PlayerState.SLIDE_RIGHT:
-			if state_time >= slide_duration: _enter_state(PlayerState.IDLE)
-		PlayerState.PARRY:
-			if state_time >= parry_duration: _enter_state(PlayerState.IDLE)
-		PlayerState.HIT:
-			if state_time >= hit_stun: _enter_state(PlayerState.IDLE)
-
-
-func _enter_state(new_state: PlayerState) -> void:
-	state = new_state
-	state_time = 0.0
-	# Animation names in the SpriteFrames must match these exactly (lowercase).
-	match state:
-		PlayerState.IDLE: sprite.play("idle")
-		PlayerState.DUCK: sprite.play("duck")
-		PlayerState.JUMP: sprite.play("jump")
-		PlayerState.SLIDE_LEFT: sprite.play("slide_left")
-		PlayerState.SLIDE_RIGHT: sprite.play("slide_right")
-		PlayerState.PARRY: sprite.play("parry")
-		PlayerState.HIT: sprite.play("hit")
-		PlayerState.DEAD: sprite.play("dead")
-
-
-# --- input (patterns 2) ---
-
-func _capture_input() -> void:
-	for action in ACTIONS:
-		if Input.is_action_just_pressed(action):
-			buffered_action = action
-			time_since_buffered = 0.0
-
-
-func _try_consume_buffer() -> void:
-	if buffered_action != "" and time_since_buffered <= input_buffer_window:
-		var next: PlayerState = ACTIONS[buffered_action]
-		buffered_action = ""
-		_enter_state(next)
-
-
-# --- attack resolution (pattern 3) ---
-
-func _on_area_entered(area: Area2D) -> void:
-	if area is Attack:
-		resolve_attack(area)
-
-
-func resolve_attack(attack: Attack) -> void:
-	if state == PlayerState.DEAD:
-		return
-	var data: AttackData = attack.data
-	var result := "hit"
-
-	if STATE_BEATS_DODGE.get(state) == data.dodge_type:
-		result = "dodged"
-	# Parry is special: only its ACTIVE window counts, and it can also beat parryable attacks.
-	if state == PlayerState.PARRY and state_time <= parry_active_window \
-			and (data.parryable or data.dodge_type == AttackData.DodgeType.PARRY):
-		result = "parried"
-
-	if result == "hit":
-		if state == PlayerState.HIT:
-			return  # i-frames: already stunned, can't be hit again
-		_take_damage(data.damage)
-
-	attack.resolve(result)                # tell the projectile so it can react (fly off / vanish)
-	Events.attack_resolved.emit(result, data)
-
-
-# --- health (pattern 4, inline version) ---
-
-func _take_damage(amount: int) -> void:
-	hp = maxi(hp - amount, 0)
-	Events.player_hit.emit(amount)
-	if hp == 0:
-		_enter_state(PlayerState.DEAD)
-		Events.player_died.emit()
-	else:
-		_enter_state(PlayerState.HIT)
-```
-
-**Tweakables:** every duration in the Inspector. Make `parry_active_window` bigger if playtesters miss parries (they will — see doc 04 §3).
-
----
-
-## 2. Input buffer
-
-**Source:** standard action-game pattern (KidsCanCode's coyote-time recipe uses the same timestamp shape: https://kidscancode.org/godot_recipes/4.x/2d/coyote_time/index.html). Already embedded in `player.gd` above.
-
-**Why:** without it, a player who presses `parry` 50ms before their slide finishes gets *nothing* — the input is dropped and it feels broken. With it, the press is remembered for `input_buffer_window` (0.12s) and fires the instant the player returns to IDLE. This single pattern is most of what people mean by "tight controls."
-
-**The shape** (reusable anywhere): record `time_since_pressed = 0` on press; each tick increment it; the action is "buffered" while `time_since_pressed <= window`; set it huge (999) to consume.
-
----
-
-## 3. Attack resolution
-
-**Source:** the topdown template's `entities/hurt_box.gd` — its line 23 disables the hurtbox while the entity is jumping (`process_mode = PROCESS_MODE_DISABLED if action == "jump"`). That's the seed idea: *your defensive state changes what can hit you.*
-
-**Our generalization** (in `resolve_attack()` above): instead of toggling collision objects per state, we keep collisions always-on and compare `attack.dodge_type` to the player's state in one readable function. Same outcome, but:
-
-- one place to debug ("why did that hit me?" → read one function),
-- no collision-layer bookkeeping across 5 lanes,
-- easy to add rules later (fail-soft blocks, combo bonuses) — they're just more lines in the same `if` chain.
-
-**Tie-breaking rule** (doc 04 §4): the checks run *dodge first, hit last*, so a same-frame overlap while entering a dodge resolves in the player's favor.
-
----
-
-## 4. Health
-
-Two options — **use the inline one** (already in `player.gd`) unless you find yourself wanting HP on something else too.
-
-**Option A — inline (recommended):** the `hp` var + `_take_damage()` in pattern 1. Ten lines, zero indirection.
-
-**Option B — component node**, simplified from the template's `components/health_controller.gd` (dropping its State hooks and PackedScene health bar):
-
-```gdscript
-class_name Health
-extends Node
-## Attach as a child of anything that can take damage. Emits, never decides.
-
-@export var max_hp := 3
-@export var recovery_time := 0.5  ## i-frames after each hit.
-
-var hp := 0
-var invincible := false
-
-signal hp_changed(new_hp: int)
-signal died
-
-func _ready() -> void:
-	hp = max_hp
-
-func change_hp(amount: int) -> void:
-	if invincible and amount < 0:
-		return
-	hp = clampi(hp + amount, 0, max_hp)
-	hp_changed.emit(hp)
-	if amount < 0:
-		_start_iframes()
-	if hp == 0:
-		died.emit()
-
-func _start_iframes() -> void:
-	invincible = true
-	await get_tree().create_timer(recovery_time).timeout
-	invincible = false
-```
-
-Note the template's version has a subtle bug worth avoiding: it reuses its `immortal` flag for both "i-frames" and "god mode," so overlapping recoveries can fight. Keeping a separate `invincible` var avoids it.
-
----
-
-## 5. Signal bus (`autoload/events.gd`)
-
-**Source:** the topdown template's `scripts/autoloads/Globals.gd`, stripped to signals only (its player/level lookup helpers solve problems we don't have).
-
-Complete file:
+*Source: the topdown template's `scripts/autoloads/Globals.gd`, stripped to signals only — its player/level lookup helpers solve problems we don't have.*
 
 ```gdscript
 extends Node
 ## Global signal bus. Emit here when something game-wide happened; connect here to react.
-## Rule: only CROSS-SYSTEM news belongs here ("call down, signal up" — see CLAUDE.md).
+## Rule: only CROSS-SYSTEM news belongs here. A node talking to its own child calls it directly.
 
 @warning_ignore_start("unused_signal")
-signal attack_spawned(attack)                    ## An attack entered the screen.
-signal attack_resolved(result: String, attack_data)  ## "dodged" | "parried" | "hit"
-signal player_hit(damage: int)
+signal player_hit(hp_left: int)
 signal player_died
-signal score_changed(new_score: int)
-signal game_state_changed(new_state)
+signal parried(projectile)
+signal dodged(direction: Vector2)
+signal dodge_failed                                    ## Not enough stamina — cue a UI flash.
+signal stamina_changed(current: float, max_value: float)
+signal run_started
+signal run_ended(time_survived: float)
 @warning_ignore_restore("unused_signal")
 ```
 
-(The `@warning_ignore` lines silence "unused signal" warnings — the bus itself never emits them; other scripts do, e.g. `Events.player_died.emit()`.)
-
-Register: Project Settings → Globals → path `res://autoload/events.gd`, name `Events`.
-
 ---
 
-## 6. Attack projectile (`attack.gd`)
+## 2. `Game` — run state + timer
 
-**Source:** original, using the Tween API (verified against https://docs.godotengine.org/en/stable/classes/class_tween.html). Telegraph philosophy from doc 04 §2.
-
-One generic scene (`attack.tscn`: `Area2D` + `AnimatedSprite2D` + `CollisionShape2D`), configured entirely by an `AttackData`:
-
-```gdscript
-class_name Attack
-extends Area2D
-## A single incoming attack. Spawned by AttackSpawner, configured by an AttackData.
-## Life: telegraph (wind-up in place) -> travel (tween to the player) -> resolved by Player.
-
-var data: AttackData
-var resolved := false
-
-@onready var sprite: AnimatedSprite2D = $AnimatedSprite2D
-@onready var sfx: AudioStreamPlayer = $AudioStreamPlayer
-
-
-func setup(attack_data: AttackData, target: Vector2) -> void:
-	data = attack_data
-	# Called by the spawner BEFORE add_child, so _ready can use it.
-	set_meta("target", target)
-
-
-func _ready() -> void:
-	if data.sprite_frames:
-		sprite.sprite_frames = data.sprite_frames
-		sprite.play("default")
-	if data.telegraph_sfx:
-		sfx.stream = data.telegraph_sfx
-		sfx.play()  # the sound IS the telegraph — starts immediately (doc 04 §2)
-
-	var target: Vector2 = get_meta("target")
-	var tween := create_tween()
-	# Telegraph: pulse in place so the player can read it.
-	tween.tween_property(sprite, "scale", Vector2(1.3, 1.3), data.telegraph_time * 0.5) \
-		.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
-	tween.tween_property(sprite, "scale", Vector2.ONE, data.telegraph_time * 0.5) \
-		.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
-	# Travel: constant speed at the player (readable — no easing surprises, doc 04 §2).
-	tween.tween_property(self, "position", target, data.travel_time) \
-		.set_trans(Tween.TRANS_LINEAR)
-	# Fly past and clean up if nothing resolved us (shouldn't happen, but be safe).
-	tween.tween_property(self, "position", target + (target - position).normalized() * 400, 0.4)
-	tween.tween_callback(queue_free)
-
-
-func resolve(result: String) -> void:
-	if resolved:
-		return
-	resolved = true
-	monitoring = false  # stop detecting; we're done
-	match result:
-		"parried":
-			# Knocked away: reverse direction fast, spin, vanish.
-			var tw := create_tween()
-			tw.tween_property(self, "position", position + Vector2(300, -200), 0.3) \
-				.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
-			tw.parallel().tween_property(self, "rotation", 6.0, 0.3)
-			tw.tween_callback(queue_free)
-		"hit":
-			queue_free()  # impact feedback is the player/camera's job
-		"dodged":
-			pass  # keep flying past on the original tween — near-misses feel great
-```
-
-**Tweakables:** everything lives in the `AttackData` resource, not here. The pulse-scale telegraph is placeholder juice — replace with a wind-up animation when art exists.
-
----
-
-## 7. AttackData, WaveData, and the spawner
-
-**Source:** Resource pattern from the template's `items/data_item.gd`; typed resource arrays confirmed for 4.x (https://docs.godotengine.org/en/stable/tutorials/scripting/gdscript/gdscript_exports.html).
-
-`scripts/attack_data.gd` and `scripts/wave_data.gd` are specified in doc 02 §5 — copy them from there verbatim.
-
-**Creating an attack in the editor (no code):** FileSystem dock → right-click `resources/attacks/` → Create New → Resource → type `AttackData` → name it (`donut_high.tres`) → fill the Inspector fields. Same for `WaveData` (drag attack `.tres` files into its `beats` array).
-
-`scripts/attack_spawner.gd`:
-
-```gdscript
-class_name AttackSpawner
-extends Node2D
-## Plays WaveData patterns: spawns each attack, waits the gap, rests between waves.
-
-@export var waves: Array[WaveData]   ## Drag wave .tres files here, in play order.
-@export var attack_scene: PackedScene
-@export var player: Player           ## Drag the Player node here.
-@export var spawn_distance := 400.0  ## How far from the player attacks appear.
-
-signal all_waves_finished
-
-# Where each attack type spawns, relative to the player. High attacks (you DUCK
-# under them) come at head height; low attacks (you JUMP over) at the feet, etc.
-const SPAWN_OFFSETS := {
-	AttackData.DodgeType.DUCK: Vector2(1.0, -0.15),
-	AttackData.DodgeType.JUMP: Vector2(1.0, 0.25),
-	AttackData.DodgeType.SLIDE_LEFT: Vector2(1.0, 0.0),
-	AttackData.DodgeType.SLIDE_RIGHT: Vector2(-1.0, 0.0),
-	AttackData.DodgeType.PARRY: Vector2(1.0, -0.05),
-}
-
-
-func play() -> void:
-	for wave in waves:
-		for attack_data in wave.beats:
-			_spawn(attack_data)
-			await get_tree().create_timer(wave.gap).timeout
-		await get_tree().create_timer(wave.rest_after).timeout
-	all_waves_finished.emit()
-
-
-func _spawn(attack_data: AttackData) -> void:
-	var attack: Attack = attack_scene.instantiate()
-	var offset: Vector2 = SPAWN_OFFSETS[attack_data.dodge_type] * spawn_distance
-	attack.position = player.position + offset
-	# Aim slightly past the player so the projectile passes through, not stops on, them.
-	attack.setup(attack_data, player.position)
-	add_child(attack)
-	Events.attack_spawned.emit(attack)
-```
-
-**Tweakables:** wave order and contents are pure `.tres` editing — this is where "designing the game" happens all week. `spawn_distance` + each attack's `travel_time` together set the speed feel.
-
----
-
-## 8. Game manager, HUD, game over/restart
-
-**Source:** the platformer's `gamemanager.gd` (score + label), `killzone.gd` (restart flow), `level_1.gd` (panel + button), upgraded with signals instead of `$"../CanvasLayer/scorelabel"` path reaching — paths break the moment you rearrange the scene; signals don't.
-
-`autoload/game_manager.gd`:
+`autoload/game.gd`. Register as **`Game`**. In Phase 1 **the timer is the score.**
 
 ```gdscript
 extends Node
-## Owns game state, score, and the persisted high score. Nothing else.
+## Owns the run: state, the survival clock, the best time. Nothing else.
 
-enum GameState { MENU, PLAYING, GAME_OVER }
+enum State { MENU, PLAYING, GAME_OVER }
 
-const SAVE_PATH := "user://highscore.cfg"
-const POINTS := {"dodged": 10, "parried": 25, "hit": 0}
+const SAVE_PATH := "user://save.cfg"
 
-var state: GameState = GameState.MENU
-var score := 0
-var high_score := 0
+var state: State = State.MENU
+var time_survived := 0.0
+var best_time := 0.0
 
 
 func _ready() -> void:
-	high_score = _load_high_score()
-	Events.attack_resolved.connect(_on_attack_resolved)
+	best_time = _load_best()
 	Events.player_died.connect(_on_player_died)
 
 
-func start_game() -> void:
-	score = 0
-	_set_state(GameState.PLAYING)
-	Events.score_changed.emit(score)
+func _process(delta: float) -> void:
+	if state == State.PLAYING:
+		# In Phase 2, Engine.time_scale makes this clock (and the whole game) run
+		# faster — which is exactly what "speed up time for more score" means.
+		time_survived += delta
 
 
-func _on_attack_resolved(result: String, _attack_data) -> void:
-	score += POINTS.get(result, 0)
-	Events.score_changed.emit(score)
+func start_run() -> void:
+	time_survived = 0.0
+	state = State.PLAYING
+	Events.run_started.emit()
 
 
 func _on_player_died() -> void:
-	if score > high_score:
-		high_score = score
-		_save_high_score()
-	_set_state(GameState.GAME_OVER)
+	state = State.GAME_OVER
+	if time_survived > best_time:
+		best_time = time_survived
+		_save_best()
+	Events.run_ended.emit(time_survived)
 
 
-func _set_state(new_state: GameState) -> void:
-	state = new_state
-	Events.game_state_changed.emit(state)
+## "83.4" -> "01:23:40" (mm:ss:hundredths), matching docs/UI-mock.jpg.
+static func format_time(t: float) -> String:
+	var minutes := int(t) / 60
+	var seconds := int(t) % 60
+	var hundredths := int(t * 100.0) % 100
+	return "%02d:%02d:%02d" % [minutes, seconds, hundredths]
 
 
-func _save_high_score() -> void:
+func _save_best() -> void:
 	var config := ConfigFile.new()
-	config.set_value("scores", "high_score", high_score)
+	config.set_value("run", "best_time", best_time)
 	config.save(SAVE_PATH)
 
 
-func _load_high_score() -> int:
+func _load_best() -> float:
 	var config := ConfigFile.new()
 	if config.load(SAVE_PATH) != OK:
-		return 0  # first run: no file yet
-	return config.get_value("scores", "high_score", 0)
+		return 0.0  # first run: no file yet
+	return config.get_value("run", "best_time", 0.0)
 ```
 
-`scripts/hud.gd` (on the HUD CanvasLayer):
+---
+
+## 3. `Player` — the file you'll tune most
+
+`scripts/player.gd`. Every number is an Inspector field; the doc comment says which way to move it.
+
+```gdscript
+class_name Player
+extends Area2D
+## The player. Dodges by physically moving out of the way, parries with a timed
+## window that works even mid-dodge, spends stamina to do it.
+##
+## TUNE: everything in the @export groups below. 60 physics ticks/sec, so
+## frames / 60 = seconds. (5 frames = 0.08s, 9 frames = 0.15s, 12 frames = 0.20s)
+
+enum State { HOME, DODGING, HIT, DEAD }
+
+@export_group("Dodge Feel")
+## How far a dodge moves you: x = sideways, y = up/down. Bigger = clears more attacks.
+@export var dodge_distance := Vector2(180.0, 130.0)
+## Seconds to dash out (0.08 = 5 frames). Lower = snappier.
+@export var dodge_out_time := 0.08
+## Seconds you hang at the far position. THIS IS THE FORGIVENESS KNOB — the whole
+## time you're out here, attacks pass through empty space. Raise it if the game feels unfair.
+@export var dodge_hang_time := 0.16
+## Seconds to snap back home (0.10 = 6 frames).
+@export var dodge_return_time := 0.10
+## Easing curve on the way out. QUINT/EXPO = explosive. LINEAR = robotic. This IS "snappy".
+@export var dodge_out_trans: Tween.TransitionType = Tween.TRANS_QUINT
+## Easing curve on the way back. CUBIC/SINE feel softer than QUINT.
+@export var dodge_return_trans: Tween.TransitionType = Tween.TRANS_CUBIC
+## Where the dash-out spends its speed. EASE_OUT = fast off the mark, settles into the hang.
+@export var dodge_out_ease: Tween.EaseType = Tween.EASE_OUT
+## Where the return spends its speed. EASE_IN_OUT = a soft launch and a soft landing.
+@export var dodge_return_ease: Tween.EaseType = Tween.EASE_IN_OUT
+
+@export_group("Parry")
+## Seconds after pressing parry during which attacks are deflected (0.15 = 9 frames).
+## See docs/04 §3 — 150ms is "tight but fair"; go wider if playtesters keep missing.
+@export var parry_window := 0.15
+## Total seconds locked in the parry animation. The gap between this and parry_window
+## is your punishment for whiffing — you can't dodge during it.
+@export var parry_recovery := 0.35
+## Stamina handed back on a successful parry. High = parrying is the skilled way to keep moving.
+@export var parry_stamina_refund := 30.0
+
+@export_group("Stamina")
+@export var max_stamina := 100.0
+## Cost per dodge. max_stamina / this = how many dodges you get on an empty tank.
+@export var dodge_stamina_cost := 25.0
+## Stamina regained per second.
+@export var stamina_regen := 22.0
+## Seconds after spending before regen restarts (stops dodge-spam from regenerating through the cost).
+@export var stamina_regen_delay := 0.5
+
+@export_group("Health")
+@export var max_hp := 3
+## Seconds of invincibility after a hit. Prevents one cluster from killing you outright.
+@export var iframe_time := 0.9
+## Seconds to slide back home after being hit.
+@export var hit_recover_time := 0.18
+## Easing curve on that slide home. SINE reads as "staggered"; LINEAR reads as "yanked".
+@export var hit_recover_trans: Tween.TransitionType = Tween.TRANS_SINE
+
+@export_group("Input")
+## A press this many seconds too early still counts. Leniency — see docs/04 §4.
+@export var input_buffer := 0.12
+
+const ACTIONS := {
+	"dodge_left": Vector2.LEFT,
+	"dodge_right": Vector2.RIGHT,
+	"dodge_up": Vector2.UP,
+	"dodge_down": Vector2.DOWN,
+}
+
+var state: State = State.HOME
+var hp := 0
+var stamina := 0.0
+var home_position := Vector2.ZERO
+
+var parry_time := -1.0        # -1 = not parrying. Counts UP while parrying.
+var iframe_left := 0.0
+var regen_block := 0.0
+var buffered := ""            # buffered input action name
+var buffer_left := 0.0
+var _tween: Tween
+
+@onready var sprite: ColorRect = $Sprite
+
+
+func _ready() -> void:
+	home_position = position
+	hp = max_hp
+	stamina = max_stamina
+	Events.stamina_changed.emit(stamina, max_stamina)
+	area_entered.connect(_on_area_entered)
+
+
+func _physics_process(delta: float) -> void:
+	_tick_timers(delta)
+	if state == State.DEAD:
+		return
+	_read_input()
+	_consume_buffer()
+	_regen(delta)
+
+
+# --- timers ---------------------------------------------------------------
+
+func _tick_timers(delta: float) -> void:
+	iframe_left = maxf(iframe_left - delta, 0.0)
+	regen_block = maxf(regen_block - delta, 0.0)
+	buffer_left = maxf(buffer_left - delta, 0.0)
+	if parry_time >= 0.0:
+		parry_time += delta
+		if parry_time >= parry_recovery:
+			parry_time = -1.0          # recovery over, free to act again
+
+
+## True only during the deflect window at the START of the parry.
+func is_parry_active() -> bool:
+	return parry_time >= 0.0 and parry_time <= parry_window
+
+## True for the whole parry, including the whiff-recovery lock.
+func is_parrying() -> bool:
+	return parry_time >= 0.0
+
+
+# --- input ----------------------------------------------------------------
+
+func _read_input() -> void:
+	for action in ACTIONS:
+		if Input.is_action_just_pressed(action):
+			buffered = action
+			buffer_left = input_buffer
+	if Input.is_action_just_pressed("parry"):
+		buffered = "parry"
+		buffer_left = input_buffer
+
+
+func _consume_buffer() -> void:
+	if buffered == "" or buffer_left <= 0.0:
+		return
+	if buffered == "parry":
+		if not is_parrying():
+			buffered = ""
+			_start_parry()
+		return
+	# A dodge needs: at home, not locked in a parry, and enough stamina.
+	if state != State.HOME or is_parrying():
+		return
+	if stamina < dodge_stamina_cost:
+		buffered = ""
+		Events.dodge_failed.emit()
+		return
+	var direction: Vector2 = ACTIONS[buffered]
+	buffered = ""
+	_start_dodge(direction)
+
+
+# --- dodge ----------------------------------------------------------------
+
+func _start_dodge(direction: Vector2) -> void:
+	state = State.DODGING
+	_spend_stamina(dodge_stamina_cost)
+	var target := home_position + direction * dodge_distance
+
+	# The whole dodge is these four lines: out, hang, back, done.
+	_tween = create_tween()
+	_tween.tween_property(self, "position", target, dodge_out_time) \
+		.set_trans(dodge_out_trans).set_ease(dodge_out_ease)
+	_tween.tween_interval(dodge_hang_time)
+	_tween.tween_property(self, "position", home_position, dodge_return_time) \
+		.set_trans(dodge_return_trans).set_ease(dodge_return_ease)
+	_tween.tween_callback(func() -> void: state = State.HOME)
+
+	Events.dodged.emit(direction)
+	_on_dodge_start(direction)
+
+
+func _start_parry() -> void:
+	parry_time = 0.0
+	_on_parry_start()
+
+
+# --- taking hits ----------------------------------------------------------
+
+func _on_area_entered(area: Area2D) -> void:
+	if area is Projectile:
+		_resolve(area)
+
+
+## The ONLY place a hit is decided. Dodging isn't checked here — if you dodged,
+## the hurtbox wasn't here and this never ran.
+func _resolve(projectile: Projectile) -> void:
+	if state == State.DEAD:
+		return
+	if is_parry_active() and projectile.data.parryable:
+		_parry_success(projectile)
+		return
+	if iframe_left > 0.0:
+		return                                  # mercy invincibility
+	_take_damage(projectile)
+
+
+func _parry_success(projectile: Projectile) -> void:
+	_gain_stamina(parry_stamina_refund)
+	projectile.deflect()
+	Events.parried.emit(projectile)
+	_on_parry_success(projectile)
+
+
+func _take_damage(projectile: Projectile) -> void:
+	hp = maxi(hp - projectile.data.damage, 0)
+	iframe_left = iframe_time
+	projectile.queue_free()
+	Events.player_hit.emit(hp)
+	_on_hit(projectile)
+
+	# Kill the dodge tween FIRST — its callback would resurrect a dead player.
+	if _tween and _tween.is_valid():
+		_tween.kill()
+
+	if hp == 0:
+		state = State.DEAD
+		Events.player_died.emit()
+		return
+
+	# The dodge is cancelled; slide home from wherever we were caught.
+	state = State.HIT
+	_tween = create_tween()
+	_tween.tween_property(self, "position", home_position, hit_recover_time) \
+		.set_trans(hit_recover_trans).set_ease(Tween.EASE_OUT)
+	_tween.tween_callback(func() -> void: state = State.HOME)
+
+
+# --- stamina --------------------------------------------------------------
+
+func _spend_stamina(amount: float) -> void:
+	stamina = maxf(stamina - amount, 0.0)
+	regen_block = stamina_regen_delay
+	Events.stamina_changed.emit(stamina, max_stamina)
+
+
+func _gain_stamina(amount: float) -> void:
+	stamina = minf(stamina + amount, max_stamina)
+	Events.stamina_changed.emit(stamina, max_stamina)
+
+
+func _regen(delta: float) -> void:
+	if regen_block > 0.0 or stamina >= max_stamina:
+		return
+	_gain_stamina(stamina_regen * delta)
+
+
+# --- your hooks -----------------------------------------------------------
+# These are called at the right moments and do nothing by default. Squash and
+# stretch, afterimages, particles, sound — put it here. Nothing else needs to
+# change. Grep the project for "## FLAIR:" to find all four.
+
+## FLAIR: fires the instant a dodge starts, with the direction you dodged.
+func _on_dodge_start(_direction: Vector2) -> void:
+	pass
+
+## FLAIR: fires when parry is pressed — before you know if it lands. Wind-up cue.
+func _on_parry_start() -> void:
+	pass
+
+## FLAIR: fires only on a successful deflect. The power-fantasy moment.
+func _on_parry_success(_projectile: Projectile) -> void:
+	pass
+
+## FLAIR: fires on every hit taken, including the fatal one.
+func _on_hit(_projectile: Projectile) -> void:
+	pass
+```
+
+**Why `parry_time` isn't a state:** it never touches `state`, so pressing parry mid-dodge just works — the spec's airborne-parry case needed no code at all.
+
+---
+
+## 4. `ProjectileData` — an attack type
+
+`scripts/projectile_data.gd`. **One `.tres` per attack type; no code per attack.**
+
+```gdscript
+class_name ProjectileData
+extends Resource
+## One attack type. Create via FileSystem → right-click resources/attacks/ →
+## Create New → Resource → ProjectileData, then fill these in.
+
+@export var display_name := "Attack"
+## Pixels per second once it launches. 300 = readable, 700 = scary.
+@export var speed := 420.0
+## Seconds it sits still and visible before launching. This is the player's
+## reaction budget — see docs/04 §1. Do not go below ~0.4.
+@export var telegraph_time := 0.7
+@export var damage := 1
+## Can the parry window deflect it? Set false for attacks that must be dodged.
+@export var parryable := true
+## How hard a parry sends it back — its speed is multiplied by this on deflect.
+## Higher = more power fantasy. 1.0 = it just turns around.
+@export var deflect_speed_multiplier := 2.0
+## FLAIR: how the player tells this attack from the others, at a glance.
+@export var color := Color(0.95, 0.85, 0.6)
+@export var size := Vector2(56.0, 18.0)
+
+@export_group("Telegraph Flash")
+## Seconds per half-blink while telegraphing. Lower = more frantic.
+@export var pulse_rate := 0.12
+## How faint the blink goes. Lower = a harder, more alarming strobe.
+@export var pulse_min_alpha := 0.35
+```
+
+**Ship three placeholders** in `resources/attacks/` (a fast small one, a slow fat one, an unparryable one) so the game runs on first launch. Delete and replace them — that's your design work.
+
+---
+
+## 5. `Projectile`
+
+`scripts/projectile.gd` on `projectile.tscn` (`Area2D` + `ColorRect` named `Sprite` + `CollisionShape2D`).
+
+```gdscript
+class_name Projectile
+extends Area2D
+## Telegraph in place, then fly at where the player was. Configured entirely by a ProjectileData.
+
+var data: ProjectileData
+var direction := Vector2.ZERO
+var telegraph_left := 0.0
+var deflected := false
+var despawn_radius := 1500.0                     # overwritten by the Spawner in setup()
+
+var _pulse: Tween
+
+@onready var sprite: ColorRect = $Sprite
+@onready var shape: CollisionShape2D = $CollisionShape2D
+
+
+## Called by the Spawner BEFORE add_child, so _ready() has everything it needs.
+func setup(attack: ProjectileData, from: Vector2, toward: Vector2, despawn: float) -> void:
+	data = attack
+	position = from
+	direction = (toward - from).normalized()
+	telegraph_left = attack.telegraph_time
+	despawn_radius = despawn
+
+
+func _ready() -> void:
+	sprite.color = data.color
+	sprite.size = data.size
+	sprite.position = -data.size * 0.5
+	# A shape saved in the .tscn is SHARED between every instance of it — same
+	# hazard as the .tres note under deflect(). Resizing one would resize them
+	# all, so each projectile gets its own RectangleShape2D.
+	shape.shape = RectangleShape2D.new()
+	(shape.shape as RectangleShape2D).size = data.size
+	rotation = direction.angle()
+	# FLAIR: the telegraph is just a pulse for now — a wind-up animation, a
+	# warning line, or a sound would all read better. See docs/04 §2.
+	_pulse = create_tween().set_loops()
+	_pulse.tween_property(sprite, "modulate:a", data.pulse_min_alpha, data.pulse_rate)
+	_pulse.tween_property(sprite, "modulate:a", 1.0, data.pulse_rate)
+
+
+func _physics_process(delta: float) -> void:
+	if telegraph_left > 0.0:
+		telegraph_left -= delta
+		if telegraph_left <= 0.0:
+			# Launch: stop flashing. Kill the loop first or it keeps writing alpha.
+			if _pulse and _pulse.is_valid():
+				_pulse.kill()
+			sprite.modulate.a = 1.0
+		return
+	position += direction * data.speed * delta
+	if position.distance_to(get_viewport_rect().size * 0.5) > despawn_radius:
+		queue_free()
+
+
+## Parried: fly back the way it came, faster, and stop being dangerous.
+func deflect() -> void:
+	if deflected:
+		return
+	deflected = true
+	# deflect() runs inside the player's area_entered dispatch, where Godot blocks
+	# direct collision-flag writes (the assignment silently fails and the parry
+	# fires twice). set_deferred applies them safely at the end of the frame.
+	set_deferred("monitoring", false)
+	set_deferred("monitorable", false)
+	direction = -direction
+	data = data.duplicate()                      # don't mutate the shared .tres!
+	data.speed *= data.deflect_speed_multiplier
+	var spin := create_tween()
+	spin.tween_property(self, "rotation", rotation + TAU, 0.4)
+```
+
+> `data.duplicate()` matters: `.tres` resources are **shared between every instance** that loads them. Mutating `data.speed` directly would permanently speed up every future copy of that attack.
+
+---
+
+## 6. `Spawner` — difficulty is three numbers
+
+`scripts/spawner.gd`.
+
+```gdscript
+class_name Spawner
+extends Node2D
+## Picks attacks and throws them at the player. Difficulty ramp = 3 numbers.
+
+@export var projectile_scene: PackedScene
+## TUNE: your attack designs. Drag .tres files here.
+@export var attacks: Array[ProjectileData] = []
+@export var player: Player
+
+@export_group("Difficulty")
+## Seconds between attacks at the start of a run. Higher = gentler opening.
+@export var start_interval := 1.6
+## Seconds between attacks once fully ramped. The floor of the difficulty curve.
+@export var min_interval := 0.45
+## How long the ramp from start_interval to min_interval takes.
+@export var ramp_seconds := 90.0
+## How far off-screen attacks appear.
+@export var spawn_radius := 720.0
+## How far past the screen a missed attack flies before it deletes itself.
+## Must stay comfortably above spawn_radius or attacks vanish on arrival.
+@export var despawn_radius := 1500.0
+
+@export_group("Spawn Arc")
+## Which arc attacks come from, in degrees. Godot's Y points down, so 180–360 is
+## the upper half — nothing comes up through the ground. Narrow it to focus the
+## pressure (e.g. 225–315 = straight down only).
+@export var spawn_angle_from := 180.0
+@export var spawn_angle_to := 360.0
+
+var _next_in := 0.0
+
+
+func _physics_process(delta: float) -> void:
+	if Game.state != Game.State.PLAYING or attacks.is_empty():
+		return
+	_next_in -= delta
+	if _next_in <= 0.0:
+		_spawn()
+		_next_in = current_interval()
+
+
+## Linear ramp from start_interval down to min_interval over ramp_seconds.
+## FLAIR: swap this for a Curve export if you want a shape other than a straight line.
+func current_interval() -> float:
+	var t: float = clampf(Game.time_survived / ramp_seconds, 0.0, 1.0)
+	return lerpf(start_interval, min_interval, t)
+
+
+func _spawn() -> void:
+	var attack: ProjectileData = attacks.pick_random()
+	# Default arc is the upper semicircle — the player stands on the ground, so
+	# nothing comes from below. Both ends are Inspector knobs.
+	var angle := randf_range(deg_to_rad(spawn_angle_from), deg_to_rad(spawn_angle_to))
+	var from := player.home_position + Vector2.from_angle(angle) * spawn_radius
+
+	var projectile: Projectile = projectile_scene.instantiate()
+	projectile.setup(attack, from, player.home_position, despawn_radius)
+	add_child(projectile)
+```
+
+Aiming at `player.home_position` (not the player's *current* position) is deliberate: attacks commit to where you were, so moving away is what saves you.
+
+---
+
+## 7. `HUD`
+
+`scripts/hud.gd` on a `CanvasLayer`. Timer + hearts + the Deadlock-style stamina arc from the mock.
 
 ```gdscript
 extends CanvasLayer
+## Timer, multiplier, hearts, stamina arc, game-over panel. Listens to Events —
+## never reaches across the scene tree with $"../..".
 
-@onready var score_label: Label = $ScoreLabel
+## Assigned in main.tscn. Only used to read max_hp — the HUD never drives the player.
+@export var player: Player
+
+@onready var time_label: Label = $TimeLabel
+@onready var multiplier_label: Label = $MultiplierLabel
 @onready var hearts_label: Label = $HeartsLabel
-@onready var game_over_panel: Panel = $GameOverPanel
+@onready var stamina_arc: Control = $StaminaArc
+@onready var game_over: Panel = $GameOverPanel
+@onready var result_label: Label = $GameOverPanel/ResultLabel
 
 
 func _ready() -> void:
-	game_over_panel.visible = false
-	Events.score_changed.connect(func(s): score_label.text = "SCORE: %d" % s)
-	Events.player_hit.connect(_on_player_hit)
-	Events.game_state_changed.connect(_on_game_state_changed)
+	game_over.visible = false
+	# Draw exactly max_hp hearts — raising max_hp in the Inspector must not need a code edit.
+	hearts_label.text = "♥".repeat(player.max_hp)
+	# Phase 1 the multiplier is fixed at x1.0; the mock shows it beside the timer,
+	# so it ships now and Phase 2's multiplier just writes to this label.
+	multiplier_label.text = "x1.0"
+	Events.player_hit.connect(func(hp: int) -> void: hearts_label.text = "♥".repeat(hp))
+	Events.stamina_changed.connect(_on_stamina_changed)
+	Events.dodge_failed.connect(_on_dodge_failed)
+	Events.run_ended.connect(_on_run_ended)
 
 
-func _on_player_hit(_damage: int) -> void:
-	var player: Player = get_tree().get_first_node_in_group("player")
-	hearts_label.text = "♥".repeat(player.hp)
+func _process(_delta: float) -> void:
+	if Game.state == Game.State.PLAYING:
+		time_label.text = Game.format_time(Game.time_survived)
 
 
-func _on_game_state_changed(new_state) -> void:
-	game_over_panel.visible = new_state == GameManager.GameState.GAME_OVER
+func _on_stamina_changed(current: float, max_value: float) -> void:
+	stamina_arc.set_meta("fill", current / max_value)
+	stamina_arc.queue_redraw()
 
 
-func _on_restart_button_pressed() -> void:  # connect the button's `pressed` signal to this
-	get_tree().reload_current_scene()
-	GameManager.start_game()
+## An empty tank silently eats the input otherwise — flash the arc so the player
+## knows WHY nothing happened. FLAIR: a shake or a buzz would read even better.
+func _on_dodge_failed() -> void:
+	var flash := create_tween()
+	stamina_arc.modulate = Color(1.0, 0.3, 0.3)
+	flash.tween_property(stamina_arc, "modulate", Color.WHITE, 0.25)
+
+
+func _on_run_ended(time_survived: float) -> void:
+	game_over.visible = true
+	result_label.text = "TIME  %s\nBEST  %s" % [
+		Game.format_time(time_survived), Game.format_time(Game.best_time)
+	]
 ```
 
-**Restart philosophy** (from the platformer): `get_tree().reload_current_scene()` is the entire "reset the game" implementation. Autoloads (GameManager, Events) survive the reload; everything in the scene resets for free. Don't build a reset system.
-
----
-
-## 9. Juice pack (hitstop, screenshake, flash)
-
-**Source:** hitstop from the platformer's `killzone.gd` (`Engine.time_scale = 0.5` on death); screenshake is the community-canonical trauma pattern (https://kidscancode.org/godot_recipes/4.x/2d/screen_shake/index.html); APIs verified for 4.7.
-
-Add all three to a `scripts/juice.gd` on Main, connected to `Events.attack_resolved`:
+`scripts/stamina_arc.gd` on the `StaminaArc` Control — **a FLAIR file, kept deliberately crude:**
 
 ```gdscript
-extends Node
-## Feedback effects. Everything here is cosmetic — deleting this file changes no rules.
+extends Control
+## FLAIR: segmented arc around the player, Deadlock-style (see docs/UI-mock.jpg).
+## Currently plain pips — colors, gaps, glow, and a drain animation are yours.
 
-@export var camera: Camera2D
-@export var player_sprite: AnimatedSprite2D
-
-
-func _ready() -> void:
-	Events.attack_resolved.connect(_on_attack_resolved)
-
-
-func _on_attack_resolved(result: String, _data) -> void:
-	match result:
-		"parried":
-			hitstop(0.12, 0.05)
-			shake(0.4)
-		"hit":
-			hitstop(0.08, 0.1)
-			shake(0.7)
-			flash(player_sprite)
+@export var segments := 8
+@export var radius := 42.0
+@export var thickness := 5.0
+@export var arc_degrees := 140.0
 
 
-## Freeze the whole game briefly. GOTCHA: a normal create_timer is ALSO slowed by
-## time_scale, so the freeze would last 20x longer than asked. The 4th argument
-## (ignore_time_scale = true) makes the timer count real time. Godot 4.7 signature:
-## create_timer(time_sec, process_always := true, process_in_physics := false, ignore_time_scale := false)
-func hitstop(duration: float, scale: float) -> void:
-	Engine.time_scale = scale
-	await get_tree().create_timer(duration, true, false, true).timeout
-	Engine.time_scale = 1.0
-
-
-## Quick decaying shake via camera offset. For the fancier noise-based version see
-## the KidsCanCode recipe; this tween version is 6 lines and jam-sufficient.
-func shake(strength: float) -> void:
-	var tween := create_tween()
-	for i in 6:
-		var punch := Vector2(randf_range(-1, 1), randf_range(-1, 1)) * strength * 12.0
-		tween.tween_property(camera, "offset", punch, 0.03)
-	tween.tween_property(camera, "offset", Vector2.ZERO, 0.05)
-
-
-## White-ish blink on hit. Plain modulate can't reach full white over a sprite's own
-## colors — good enough for a jam; a shader does it properly if we ever care.
-func flash(sprite: CanvasItem) -> void:
-	sprite.modulate = Color(3, 3, 3)   # overbright
-	var tween := create_tween()
-	tween.tween_property(sprite, "modulate", Color.WHITE, 0.2)
+func _draw() -> void:
+	var fill: float = get_meta("fill", 1.0)
+	var step := deg_to_rad(arc_degrees) / float(segments)
+	var start := deg_to_rad(-90.0 - arc_degrees * 0.5)
+	for i in segments:
+		var lit := (float(i) / float(segments)) < fill
+		var color := Color(1, 1, 1, 0.9) if lit else Color(1, 1, 1, 0.15)
+		draw_arc(Vector2.ZERO, radius, start + i * step,
+			start + (i + 1) * step - 0.06, 8, color, thickness)
 ```
-
-**Order of value** (from "Juice It or Lose It" — https://gamejuice.co.uk/resources/juice-it-or-lose-it): sound > hitstop > shake > particles. Budget half of day 4 for this; it's the highest rating-per-hour work in a jam.
 
 ---
 
-## 10. Audio
+## 8. `Main` — start + restart
 
-**Source:** the platformer's setup, kept as-is because it's exactly right for a jam.
+`scripts/main.gd`.
 
-- **SFX:** one `AudioStreamPlayer` child per sound, on the node that owns the moment (the attack owns its telegraph sound, the HUD owns the game-over sting). Play with `$AudioStreamPlayer.play()`. Don't build a sound manager.
-- **Per-attack telegraph sounds** are gameplay, not polish — they're set in `AttackData.telegraph_sfx` and played by `attack.gd` (pattern 6). Audio reaction time beats visual by ~50ms (doc 04 §2).
-- **Music:** an autoload *scene* (like the platformer's `Bgscore`) — an `AudioStreamPlayer` with autoplay on. Because it's an autoload it **survives `reload_current_scene()`**, so the music doesn't hiccup on restart. Register the scene (not script) as an autoload.
-- If a sound must finish before deleting a node: `await $AudioStreamPlayer.finished` then `queue_free()` (platformer's `coins.gd` trick) — or just put the player on the HUD instead.
+```gdscript
+extends Node2D
+## Starts the run and handles restart. That's all it does.
 
-**Free assets:** sfxr/jsfxr (https://sfxr.me) generates retro SFX in seconds; Kenney (https://kenney.nl/assets) for CC0 sounds and art.
+func _ready() -> void:
+	Game.start_run()
+
+
+func _unhandled_input(event: InputEvent) -> void:
+	if Game.state == Game.State.GAME_OVER and event.is_action_pressed("restart"):
+		get_tree().reload_current_scene()
+```
+
+**Restart is one line.** `reload_current_scene()` resets the whole scene; the `Game` and `Events` autoloads survive so `best_time` persists. *(Pattern from the platformer's `killzone.gd` / `level_1.gd`.)* Don't build a reset system.
+
+---
+
+## 9. Input map — project settings
+
+Generated into `project.godot`. Every action gets a WASD-ish key **and** an arrow key:
+
+| Action | Keys |
+|---|---|
+| `dodge_left` | A, Left |
+| `dodge_right` | D, Right |
+| `dodge_up` | Space, Up |
+| `dodge_down` | S, Down |
+| `parry` | J |
+| `restart` | Enter, R |
+
+---
+
+## 10. Phase 2 seams
+
+Left open on purpose — none of these require touching Phase 1 structure:
+
+| Phase 2 feature | Where it plugs in |
+|---|---|
+| Timer multiplier | `Engine.time_scale` in `Game`. Projectiles already move by `speed * delta` and the clock already accumulates `delta`, so one property speeds up the game *and* the score rate together. |
+| Upgrades | An `UpgradeData` Resource that writes to the player's `@export` vars at runtime (they're plain vars, not consts, precisely for this). |
+| Juice | Hitstop, screenshake, and hit-flash go in a `juice.gd` on Main listening to `Events`. Hitstop uses `Engine.time_scale` too — with the multiplier live, save and restore the current scale rather than assuming `1.0`, and pass `ignore_time_scale = true` as the 4th arg of `get_tree().create_timer()` or the freeze stretches. |
+| Torch / light | `PointLight2D` on the player + `CanvasModulate` on Main. |
+| Near-miss scoring **(stretch idea — not requested; needs user sign-off, since the spec says score = timer only)** | A second, slightly larger Area2D on the player ("grazebox") that fires when a projectile passes close without hitting. |
+
+**Free assets when you get there:** [sfxr](https://sfxr.me) for retro SFX in seconds, [Kenney](https://kenney.nl/assets) for CC0 art and audio.

@@ -1,0 +1,64 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scripts/hud.gd" id="1_hud"]
+[ext_resource type="Script" path="res://scripts/stamina_arc.gd" id="2_arc"]
+
+[node name="HUD" type="CanvasLayer"]
+script = ExtResource("1_hud")
+
+[node name="TimeLabel" type="Label" parent="."]
+offset_left = 426.0
+offset_top = 12.0
+offset_right = 726.0
+offset_bottom = 64.0
+theme_override_font_sizes/font_size = 36
+text = "00:00:00"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="MultiplierLabel" type="Label" parent="."]
+offset_left = 730.0
+offset_top = 22.0
+offset_right = 840.0
+offset_bottom = 60.0
+theme_override_colors/font_color = Color(0.75, 0.78, 0.85, 1)
+theme_override_font_sizes/font_size = 22
+text = "x1.0"
+vertical_alignment = 1
+
+[node name="HeartsLabel" type="Label" parent="."]
+offset_left = 426.0
+offset_top = 66.0
+offset_right = 726.0
+offset_bottom = 108.0
+theme_override_colors/font_color = Color(0.92, 0.27, 0.33, 1)
+theme_override_font_sizes/font_size = 28
+text = "♥♥♥"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="StaminaArc" type="Control" parent="."]
+offset_left = 496.0
+offset_top = 520.0
+offset_right = 496.0
+offset_bottom = 520.0
+mouse_filter = 2
+script = ExtResource("2_arc")
+
+[node name="GameOverPanel" type="Panel" parent="."]
+visible = false
+offset_left = 376.0
+offset_top = 214.0
+offset_right = 776.0
+offset_bottom = 434.0
+
+[node name="ResultLabel" type="Label" parent="GameOverPanel"]
+offset_left = 20.0
+offset_top = 40.0
+offset_right = 380.0
+offset_bottom = 180.0
+theme_override_font_sizes/font_size = 30
+text = "TIME  00:00:00
+BEST  00:00:00"
+horizontal_alignment = 1
+vertical_alignment = 1

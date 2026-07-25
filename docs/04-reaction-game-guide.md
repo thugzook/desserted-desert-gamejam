@@ -1,6 +1,6 @@
 # Reaction Game Design Guide
 
-Genre knowledge the reference repos don't have: how to make a duck/jump/slide/parry game feel *fair and tight* instead of random and cheap. Concrete numbers throughout — they're the starting values for our `@export` vars.
+Genre knowledge the reference repos don't have: how to make a dodge/parry game feel *fair and tight* instead of random and cheap. Our version of the genre is 4-direction dash-and-return plus a parry window (`docs/02` §4–5). Concrete numbers throughout — they're the starting values for our `@export` vars.
 
 ## 1. The reaction-time budget
 
@@ -8,10 +8,10 @@ Physiology sets a hard floor on how fast anyone can respond:
 
 - Simple visual reaction (see it → press one known button): median **~273ms** (Human Benchmark dataset).
 - Audio is **~30–50ms faster** than visual — a reason to give every attack a sound (§2).
-- **Our game is harder than that**: the player must *identify* which of 5 responses fits, which pushes response time to **320–530ms** in multi-choice studies (arXiv 2305.17180).
+- **Our game is harder than that**: even though collision decides everything, the player still has to *choose* — which of four directions clears the incoming attack, or whether to parry instead. That's a multi-choice decision, not a single known button, and multi-choice studies put it at **320–530ms** (arXiv 2305.17180). The numbers hold; only the reason changed (v1 asked "which of 5 responses matches this attack type?", v2 asks "which way is out of the way?").
 - Design formula (GDKeys "Anatomy of an Attack"): minimum telegraph = reaction time + the player action's own startup + a difficulty buffer. And that minimum is a *hard-mode floor*.
 
-**Our defaults:** telegraph + travel ≥ **600–800ms** early game; never below **~400ms** even at max difficulty. (In `AttackData`: `telegraph_time 0.6` + `travel_time 0.5` early; floor around `0.2 + 0.2` late.)
+**Our defaults:** the reaction budget is the telegraph plus the flight time from spawn to the player. Aim for ≥ **600–800ms** early game and **never below ~400ms** at any difficulty. In `ProjectileData`: `telegraph_time` **0.6–0.9** early, and never below **~0.4** (§6, rule 5) — that floor is physiological, not a difficulty setting.
 
 Sources: https://humanbenchmark.com/tests/reactiontime/statistics · https://gdkeys.com/keys-to-combat-design-1-anatomy-of-an-attack/ · https://arxiv.org/pdf/2305.17180
 
@@ -22,10 +22,11 @@ Mike Stout (Insomniac): an attack is a *question* the game asks; the telegraph i
 Rules we follow:
 
 1. **Every attack type gets one unmistakable identity**: a distinct silhouette/approach angle + a distinct color + a distinct sound. Never reuse a cue across types.
-2. **The sound starts at wind-up**, not impact — it's the fastest channel (§1). In our code, `attack.gd` plays `telegraph_sfx` the moment it spawns.
-3. **Same attack, same telegraph, every time.** Consistency is what turns reacting into learning.
-4. **Attack anatomy = anticipation → active → recovery.** Make anticipation *long and exaggerated* (Cuphead's cartoon wind-ups are best-in-class); make the active phase fast and **constant-speed** — easing on the travel makes impact timing unreadable, which is why our projectile tween uses `TRANS_LINEAR`.
-5. Cheap color convention: one hue per required response (e.g. red glint = parryable, à la Sekiro's "perilous" flash).
+2. **Phase 1 telegraphs visually only.** A projectile sits still and blinks — `pulse_rate` and `pulse_min_alpha` on `ProjectileData` — while `color` and `size` carry the per-attack identity. That's the whole system until art exists.
+3. **Per-attack SFX is the recommended Phase 2 upgrade.** Audio reaction is ~50ms faster than visual (§1), so a wind-up sound is the single cheapest way to buy the player reaction time. Start the sound at wind-up, not impact.
+4. **Same attack, same telegraph, every time.** Consistency is what turns reacting into learning.
+5. **Attack anatomy = anticipation → active → recovery.** Make anticipation *long and exaggerated* (Cuphead's cartoon wind-ups are best-in-class); make the active phase fast and **constant-speed** — acceleration on the travel makes impact timing unreadable. Our projectiles move at a flat `speed * delta` in `_physics_process` for exactly that reason: no easing curve to misjudge.
+6. Cheap color convention: one hue per required response (e.g. red glint = parryable, à la Sekiro's "perilous" flash).
 
 Sources: https://www.gamedeveloper.com/design/enemy-attacks-and-telegraphing · https://www.gamedeveloper.com/game-platforms/designing-for-difficulty-readability-in-arpgs
 
@@ -47,7 +48,7 @@ Two Sekiro tricks worth stealing (both cheap):
 - **Fail-soft:** a missed deflect degrades to a *block* (reduced damage), not a clean hit. Stretch goal for us: late parry against a parryable attack = "blocked" for half damage.
 - **Anti-mash:** the window shrinks if you spam the button. Only add this if playtests show spam trivializes parrying.
 
-**Our defaults:** `parry_active_window 0.15` (9 frames — tight-but-fair). Dodges are **state-based, not frame-perfect**: if you're ducked when the high attack passes, you're safe, period — the effective window is the whole `duck_duration` (~400ms). Jam players get one 2-minute session with zero practice: **err one tier more generous than feels right to you** — after a week of testing your own game, you are the worst possible difficulty judge.
+**Our defaults:** `parry_window 0.15` (9 frames — tight-but-fair). Dodges are **positional, not frame-perfect**: your hurtbox physically leaves the projectile's path, so the effective window is however long you're out there — `dodge_out_time + dodge_hang_time + dodge_return_time` (~340ms at default settings), and `dodge_hang_time` is the knob that widens it. Jam players get one 2-minute session with zero practice: **err one tier more generous than feels right to you** — after a week of testing your own game, you are the worst possible difficulty judge.
 
 Sources: https://sekiroshadowsdietwice.wiki.fextralife.com/Deflection · https://wiki.supercombo.gg/w/Street_Fighter_3:_3rd_Strike/System · https://cuphead.wiki.gg/wiki/Parry_Slap
 
@@ -57,8 +58,9 @@ Maddy Thorson on Celeste (canonical read — https://maddythorson.medium.com/cel
 
 Our implementations:
 
-- **Input buffer (120ms):** an action pressed slightly early fires the moment it legally can (cookbook pattern 2). Industry norm is 100–150ms.
-- **Same-frame ties:** if an attack lands the exact tick a dodge starts, the dodge wins — our `resolve_attack()` checks dodge-before-hit deliberately.
+- **Input buffer (120ms):** an action pressed slightly early fires the moment it legally can (`input_buffer` on the Player). Industry norm is 100–150ms.
+- **Parry beats damage:** `_resolve()` checks the parry window *before* it checks for a hit, so a parry landing on the same tick as the projectile resolves in your favor.
+- **Mercy i-frames (900ms):** after any hit you're untouchable for `iframe_time`, so one dense cluster can't take all three hearts at once.
 - **Late grace (stretch):** accept a parry up to ~50ms *after* nominal impact (Celeste's coyote time is 5 frames of the same idea).
 - Corroboration from Crypt of the NecroDancer: they shipped **double** their initial timing leeway, because "the times when you are least accurate are the times when you are most stressed."
 
@@ -66,30 +68,30 @@ Source: https://www.gamedeveloper.com/audio/game-design-deep-dive-finding-the-be
 
 ## 5. Difficulty ramping
 
-- **Ramp one axis at a time** (ABA Games): pattern *complexity* first (longer waves, more mixed types), *speed* second — speed runs into the §1 physiological wall. Scaling both at once compounds non-linearly into impossible.
-- **Sawtooth, not slope:** rising cycles with rest beats between waves (`WaveData.rest_after`). Players tolerate higher peaks when breathers follow.
-- **Teach in isolation:** each new attack type appears *alone*, slow, 3–5 times, before it's ever mixed. (Punch-Out structure: each opponent is a learnable composition.)
-- **Author on a beat grid:** Punch-Out is "a rhythm game without music"; Hi-Fi Rush attacks on the beat. Practical version for us: pick ~100 BPM (600ms/beat), make `gap` a multiple of the beat, `telegraph_time` = 1 beat. Patterns become learnable music, and wave `.tres` files become trivially authorable ("attack on beats 1, 2, 4...").
+- **Ramp one axis at a time** (ABA Games): *density* first (shorter `min_interval`, more mixed types), *speed* second — projectile speed runs into the §1 physiological wall. Scaling both at once compounds non-linearly into impossible.
+- **Sawtooth, not slope:** rising cycles with breathers between them. Players tolerate higher peaks when a rest follows. Our spawner ramps on a straight line instead, so the cheap approximation is a gentle `ramp_seconds` — real rest beats need authored patterns (below).
+- **"Teaching" without authored waves:** we spawn randomly, so a new type can't be introduced alone. The two levers that do the teaching are a **generous `start_interval`** (1.6s+, so the first ~15 seconds are survivable while you learn the controls) and **visually distinct attacks** (`color` + `size`, §2) so types stay tellable apart once they mix.
+- **Beat grids and authored patterns are a Phase 3 idea, if ever.** Punch-Out is "a rhythm game without music"; Hi-Fi Rush attacks on the beat, and that's genuinely more learnable than randomness. But it means an authoring format and content work we cut on purpose (`docs/05` §1). If it ever comes back: ~100 BPM (600ms/beat), spawn interval a multiple of the beat, `telegraph_time` = 1 beat.
 
 Sources: https://abagames.github.io/joys-of-small-game-development-en/difficulty/curve.html · https://www.gamedeveloper.com/design/difficulty-curves
 
-## 6. Wave-authoring recipe
+## 6. Tuning recipe (endless ramp, not authored waves)
 
-When filling `resources/waves/`:
+Phase 1 spawns randomly from your attack list and shrinks the interval over time, so difficulty is three Spawner numbers plus your attack designs:
 
-1. Wave 1: one attack type × 4 reps, telegraph 0.8s, gap 2 beats.
-2. One new type per wave, taught solo, then one "mix quiz" wave of the two.
-3. After all 5 types are taught: mixed waves, shrink `gap` from 2 beats → 1 beat.
-4. Only then shrink `telegraph_time`/`travel_time` (never below ~400ms total, §1).
-5. `rest_after`: 2–4s normally; longer after a spike.
+1. **Design attacks that read differently.** Each `.tres` gets its own `color` and `size` — that's the whole identity system until art exists (§2).
+2. **Set `start_interval` generously** (1.6s+) so the first ~15 seconds teach the game by being survivable.
+3. **Set `min_interval` by playtest**, not by instinct — it's the hardest the game ever gets.
+4. **Stretch `ramp_seconds`** if players die before they've learned; shorten it if the game gets boring before it gets hard.
+5. **Never take `telegraph_time` below ~0.4s** on any attack (§1) — that's the physiological floor.
 6. End every session by making something 20% easier than feels right (§3).
 
 ## 7. Playtest checklist (day 5–6)
 
 Watch someone else play once, silently. Check:
 
-- [ ] Did they understand which action beats which attack *without being told*? (If no → telegraph identity problem, §2.)
+- [ ] Could they tell which direction clears each attack, at a glance? (If no → telegraph identity problem, §2.)
 - [ ] Did they ever say "I pressed it!"? (If yes → widen buffer/windows, §4.)
-- [ ] Did they die during the *teaching* waves? (If yes → slow wave 1–2 down.)
+- [ ] Did they die in the first 15 seconds? (If yes → raise `start_interval`.)
 - [ ] Could they tell dodge from parry scoring? (If no → juice/HUD feedback gap.)
 - [ ] Did they immediately hit restart when they died? (The real success metric.)
