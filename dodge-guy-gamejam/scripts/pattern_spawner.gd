@@ -31,6 +31,10 @@ const ANY_LANE := "ANY"
 ## Beats of silence before measure 1 the first time through. Reaction runway —
 ## keep it at least ~3 so the very first note still gets its full telegraph.
 @export var lead_in_beats := 4.0
+## Beats of silence inserted after EVERY measure (including the last, before the
+## loop wraps). The player's breather between phrases. 0 = measures back to back;
+## 2 = a half-measure rest in 4/4; 4 = a full silent measure after each one.
+@export var rest_beats_between_measures := 2.0
 ## TUNE: which lanes an "ANY" (undisclosed direction) note may resolve to.
 ## Duplicate an entry to weight it, remove one to retire it.
 @export var lanes: Array[Projectile.Lane] = [
@@ -122,7 +126,9 @@ func _load_pattern() -> void:
 
 	var bpm := bpm_override if bpm_override > 0.0 else float(data.get("bpm", 100.0))
 	_seconds_per_beat = 60.0 / bpm
-	var beats_per_measure := float(data.get("beats_per_measure", 4))
+	# Every measure is stretched by the rest, so notes keep their in-measure
+	# timing but each phrase starts rest_beats later than the file says.
+	var beats_per_measure := float(data.get("beats_per_measure", 4)) + rest_beats_between_measures
 	var steps_per_beat := float(data.get("steps_per_beat", 4))
 	_loop_beats = float(data.get("measures", 10)) * beats_per_measure
 
