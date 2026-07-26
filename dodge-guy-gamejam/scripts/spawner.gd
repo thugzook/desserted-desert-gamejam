@@ -30,16 +30,15 @@ extends Node2D
 ## each lane lives in player.gd's LANE_ANSWERS). Duplicate an entry to make that
 ## lane more common (e.g. two ABOVEs = overheads twice as likely). Remove one to retire it.
 @export var lanes: Array[Projectile.Lane] = [
-	Projectile.Lane.ABOVE,
-	Projectile.Lane.LEFT,
-	Projectile.Lane.RIGHT,
+	Projectile.Lane.ABOVE_LEFT,
+	Projectile.Lane.ABOVE_RIGHT,
+	Projectile.Lane.ABOVE_CENTER,
+	Projectile.Lane.FEET_LEFT,
+	Projectile.Lane.FEET_RIGHT,
 	Projectile.Lane.HEAD_LEFT,
 	Projectile.Lane.HEAD_RIGHT,
 ]
-## How far above the player's center "head height" is, in pixels. With rule-based
-## dodging this is pure presentation — it just has to READ as "at the head":
-## roughly -8 to -20 for the 44px placeholder box.
-@export var head_offset := -18.0
+
 ## How far a shot travels from the screen centre before it deletes itself.
 ## Must comfortably exceed spawn_radius or attacks vanish before they arrive.
 @export var despawn_radius := 1500.0
@@ -76,27 +75,40 @@ func current_interval() -> float:
 func _spawn() -> void:
 	var attack: ProjectileData = attacks.pick_random()
 	var lane: Projectile.Lane = lanes.pick_random()
-	var home := player.home_position
+	var player_center := player.home_position
+	# Offsets from centre, not absolute positions — Godot's Y grows DOWNWARD, so
+	# up (head) is negative and down (feet) is positive. Derived from the sprite,
+	# so resizing the player re-aims every lane automatically.
+	var head_offset_y := -(player.player_size.y / 2)
+	var feet_offset_y := player.player_size.y / 2
+	
+	var center_offset_x := player.player_size.x / 2
 
 	# Anchored to home_position: every lane is a fixed, axis-aligned approach so
 	# the player can learn each one's answer (LANE_ANSWERS in player.gd decides).
 	var from: Vector2
 	var toward: Vector2
 	match lane:
-		Projectile.Lane.ABOVE:
-			from = home + Vector2(0.0, -spawn_radius)
-			toward = home
-		Projectile.Lane.LEFT:
-			from = home + Vector2(-spawn_radius, 0.0)
-			toward = home
-		Projectile.Lane.RIGHT:
-			from = home + Vector2(spawn_radius, 0.0)
-			toward = home
+		Projectile.Lane.ABOVE_CENTER:
+			from = player_center + Vector2(0.0, -spawn_radius)
+			toward = player_center
+		Projectile.Lane.ABOVE_LEFT:
+			from = player_center + Vector2(-center_offset_x, -spawn_radius)
+			toward = player_center + Vector2(-center_offset_x, 0.0)
+		Projectile.Lane.ABOVE_RIGHT:
+			from = player_center + Vector2(center_offset_x, -spawn_radius)
+			toward = player_center + Vector2(center_offset_x, 0.0)
+		Projectile.Lane.FEET_LEFT:
+			from = player_center + Vector2(-spawn_radius, feet_offset_y)
+			toward = player_center + Vector2(0.0, feet_offset_y)
+		Projectile.Lane.FEET_RIGHT:
+			from = player_center + Vector2(spawn_radius, feet_offset_y)
+			toward = player_center + Vector2(0.0, feet_offset_y)
 		Projectile.Lane.HEAD_LEFT:
-			from = home + Vector2(-spawn_radius, head_offset)
+			from = player_center + Vector2(-spawn_radius, head_offset_y)
 			toward = from + Vector2.RIGHT  # horizontal — reads as "at the head"
 		Projectile.Lane.HEAD_RIGHT:
-			from = home + Vector2(spawn_radius, head_offset)
+			from = player_center + Vector2(spawn_radius, head_offset_y)
 			toward = from + Vector2.LEFT
 
 	var projectile: Projectile = projectile_scene.instantiate()

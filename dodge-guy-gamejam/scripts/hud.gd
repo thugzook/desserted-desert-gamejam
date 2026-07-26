@@ -34,7 +34,7 @@ func _ready() -> void:
 	# The Player is _ready() before the HUD is, so its opening stamina_changed
 	# already went out. Seed the arc by hand instead of waiting for the first dodge.
 	if player != null:
-		_on_stamina_changed(player.stamina, player.max_stamina)
+		_on_stamina_changed(player.stamina, player.max_stamina, 0.0)
 
 
 func _process(_delta: float) -> void:
@@ -50,8 +50,12 @@ func _refresh_hearts(hp: int) -> void:
 	hearts_label.text = "♥".repeat(maxi(hp, 0))
 
 
-func _on_stamina_changed(current: float, max_value: float) -> void:
-	stamina_arc.set_meta("fill", current / max_value)
+func _on_stamina_changed(current: int, max_value: int, partial: float) -> void:
+	# The arc's pip count follows max_stamina, so an upgrade that grants more bars
+	# grows the arc without touching the HUD.
+	stamina_arc.set_meta("segments", max_value)
+	stamina_arc.set_meta("filled", current)
+	stamina_arc.set_meta("partial", partial)
 	stamina_arc.queue_redraw()
 
 

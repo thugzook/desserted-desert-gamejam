@@ -1,21 +1,20 @@
-[gd_scene load_steps=3 format=3]
+[gd_scene format=3 uid="uid://dy6m3j0picd3k"]
 
-[ext_resource type="Script" path="res://scripts/player.gd" id="1_player"]
+[ext_resource type="Script" uid="uid://b3fbogw4nclcv" path="res://scripts/player.gd" id="1_player"]
 
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_hurtbox"]
-size = Vector2(44, 44)
+size = Vector2(190, 190)
 
-[node name="Player" type="Area2D"]
-monitoring = true
+[node name="Player" type="Area2D" unique_id=346620811]
 monitorable = false
 script = ExtResource("1_player")
 
-[node name="Sprite" type="ColorRect" parent="."]
-offset_left = -24.0
-offset_top = -24.0
-offset_right = 24.0
-offset_bottom = 24.0
+[node name="Sprite" type="ColorRect" parent="." unique_id=528871655]
+offset_left = -100.0
+offset_top = -100.0
+offset_right = 100.0
+offset_bottom = 100.0
 color = Color(0.66, 0.66, 0.7, 1)
 
-[node name="CollisionShape2D" type="CollisionShape2D" parent="."]
+[node name="Collision2D_hurtbox" type="CollisionShape2D" parent="." unique_id=415810595]
 shape = SubResource("RectangleShape2D_hurtbox")

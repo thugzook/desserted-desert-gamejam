@@ -1,20 +1,19 @@
-[gd_scene load_steps=3 format=3]
+[gd_scene format=3 uid="uid://cwyrrk1dsu60l"]
 
-[ext_resource type="Script" path="res://scripts/projectile.gd" id="1_projectile"]
+[ext_resource type="Script" uid="uid://wtkuee7ag312" path="res://scripts/projectile.gd" id="1_projectile"]
 
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_hitbox"]
 size = Vector2(56, 18)
 
-[node name="Projectile" type="Area2D"]
+[node name="Projectile" type="Area2D" unique_id=1632407819]
 monitoring = false
-monitorable = true
 script = ExtResource("1_projectile")
 
-[node name="Sprite" type="ColorRect" parent="."]
+[node name="Sprite" type="ColorRect" parent="." unique_id=563075732]
 offset_left = -28.0
 offset_top = -9.0
 offset_right = 28.0
 offset_bottom = 9.0
 
-[node name="CollisionShape2D" type="CollisionShape2D" parent="."]
+[node name="CollisionShape2D" type="CollisionShape2D" parent="." unique_id=500915054]
 shape = SubResource("RectangleShape2D_hitbox")

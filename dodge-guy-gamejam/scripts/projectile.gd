@@ -4,10 +4,10 @@ extends Area2D
 
 ## Which direction this shot attacks from — the player's LANE_ANSWERS table maps
 ## each lane to the dodge direction that beats it.
-enum Lane { ABOVE, LEFT, RIGHT, HEAD_LEFT, HEAD_RIGHT }
+enum Lane { ABOVE_LEFT, ABOVE_RIGHT, ABOVE_CENTER, FEET_LEFT, FEET_RIGHT, HEAD_LEFT, HEAD_RIGHT }
 
 var data: ProjectileData
-var lane: Lane = Lane.ABOVE
+var lane: Lane = Lane.ABOVE_CENTER
 var direction := Vector2.ZERO
 var telegraph_left := 0.0
 var deflected := false
