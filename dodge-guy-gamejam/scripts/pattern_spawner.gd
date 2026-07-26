@@ -47,6 +47,14 @@ const ANY_LANE := "ANY"
 	Projectile.Lane.HEAD_RIGHT,
 ]
 
+@export_group("Call Sound")
+## Beats before a note ARRIVES that its call tick plays. With 4 (and a 4-beat
+## rest between measures) each phrase is heard as "bum bum bum bum" during the
+## rest, then answered by the attacks on those same beats. 0 = no calls.
+@export var cue_beats := 4.0
+## The tick sound. Leave empty to use the built-in assets/sounds/cue_tick.wav.
+@export var cue_sound: AudioStream
+
 @export_group("Placement")
 ## How far off-screen attacks appear. Also the travel distance, so it's half of
 ## lead_time() — change it and the spawner re-schedules everything automatically.
@@ -61,10 +69,20 @@ var _seconds_per_beat := 0.6
 var _song_time := 0.0               # seconds since the run started
 var _next_note := 0                 # index into _notes of the next unspawned note
 var _loop := 0                      # how many times the pattern has wrapped
+var _next_cue := 0                  # second cursor over _notes, for the call sounds
+var _cue_loop := 0
+var _cue_player: AudioStreamPlayer
 
 
 func _ready() -> void:
 	_load_pattern()
+	if cue_sound == null:
+		cue_sound = load("res://assets/sounds/cue_tick.wav")
+	# Built in code, not the scene, so main.tscn needs no wiring for audio.
+	_cue_player = AudioStreamPlayer.new()
+	_cue_player.stream = cue_sound
+	_cue_player.max_polyphony = 4   # 16th-note calls overlap; let them ring
+	add_child(_cue_player)
 
 
 func _physics_process(delta: float) -> void:
@@ -79,6 +97,18 @@ func _physics_process(delta: float) -> void:
 		if _next_note >= _notes.size():  # pattern wraps — loop forever
 			_next_note = 0
 			_loop += 1
+	# The audio CALL: same walk over the same notes, but cue_beats ahead of each
+	# arrival instead of lead_time — the phrase is heard before it must be answered.
+	if cue_beats <= 0.0:
+		return
+	while _cue_seconds(_next_cue) <= _song_time:
+		_cue_player.play()
+		print_verbose("PatternSpawner: cue for beat %.2f at t=%.3f" % [
+				_notes[_next_cue]["beats"], _song_time])
+		_next_cue += 1
+		if _next_cue >= _notes.size():
+			_next_cue = 0
+			_cue_loop += 1
 
 
 ## Seconds between a shot spawning and reaching the player: telegraph + travel.
@@ -94,6 +124,12 @@ func lead_time() -> float:
 ## When note `i` of the CURRENT loop arrives at the player, in song seconds.
 func _arrival_seconds(i: int) -> float:
 	var beats: float = lead_in_beats + _loop * _loop_beats + _notes[i]["beats"]
+	return beats * _seconds_per_beat
+
+
+## When note `i`'s call tick sounds: cue_beats before its arrival.
+func _cue_seconds(i: int) -> float:
+	var beats: float = lead_in_beats + _cue_loop * _loop_beats + _notes[i]["beats"] - cue_beats
 	return beats * _seconds_per_beat
 
 
