@@ -2,8 +2,11 @@ class_name Player
 extends Area2D
 ## The player. A dodge is a TIMED WINDOW with a DIRECTION RULE: press the right
 ## direction for the incoming lane while it arrives and the projectile is
-## neutralized (it ghosts through you). The body's nudge is pure presentation —
-## the collider never moves. Parry works even mid-dodge. Everything costs stamina.
+## neutralized (it ghosts through you). The WHOLE body moves — hurtbox included
+## (user decision 2026-07-26) — so ducking really slips under head shots, and
+## dodging INTO a shot's path means parry or pay. Dodges are interruptible: a new
+## dodge input redirects mid-animation; only parry recovery locks you out.
+## STAMINA IS DISABLED — every stamina line is commented, grep "STAMINA DISABLED".
 ##
 ## The dodge rulebook is LANE_ANSWERS below — one table, edit freely.
 ##
@@ -41,9 +44,10 @@ const LANE_ANSWERS := {
 }
 
 @export_group("Dodge Feel")
-## How far the BODY (sprite only) nudges: x = sideways, y = up/down. Pure
-## presentation — the hurtbox stays home and the LANE_ANSWERS rule decides dodges,
-## so this is a look, not a reach. Keep it small enough to read as a flinch.
+## How far the WHOLE body (sprite + hurtbox) moves: x = sideways, y = up/down.
+## This is a real reach now — raise y and ducks/jumps physically clear head/feet
+## shots; raise x and sidesteps can clear overheads. Small values keep dodging
+## mostly rule-based (LANE_ANSWERS), big values make it spatial.
 @export var dodge_distance := Vector2(25, 20)
 ## Seconds to dash out (0.08 = 5 frames). Lower = snappier. Out + hang + return
 ## together are the ACTIVE WINDOW — dodge while a shot arrives and you've dodged it.
@@ -78,7 +82,7 @@ const LANE_ANSWERS := {
 @export var max_stamina := 4
 ## Bars spent per dodge. Keep this at 1 — it's what makes "+1 max = +1 dodge" true
 ## for the player. Raising it breaks that read.
-@export var dodge_stamina_cost := 1
+@export var dodge_stamina_cost := 0
 ## Seconds to recharge ONE bar. Lower = dodge more often.
 @export var stamina_recharge_time := 1.2
 ## Seconds after spending before recharging resumes (stops dodge-spam from
@@ -122,8 +126,10 @@ func _ready() -> void:
 	player_size = sprite.size
 	_sprite_home = sprite.position
 	hp = max_hp
-	stamina = max_stamina
-	_emit_stamina()
+	# STAMINA DISABLED (2026-07-26): uncomment these and the other "STAMINA
+	# DISABLED" blocks (player.gd + hud.gd) to bring the whole mechanic back.
+	#stamina = max_stamina
+	#_emit_stamina()
 	area_entered.connect(_on_area_entered)
 	sprite.modulate = Color.CORAL
 
@@ -134,7 +140,8 @@ func _physics_process(delta: float) -> void:
 		return
 	_read_input()
 	_consume_buffer()
-	_regen(delta)
+	# STAMINA DISABLED (2026-07-26): no recharge while dodges are free.
+	#_regen(delta)
 
 
 ## True only during the deflect window at the START of the parry.
@@ -187,13 +194,16 @@ func _consume_buffer() -> void:
 			buffered = ""
 			_start_parry()
 		return
-	# A dodge needs: at home, not locked in a parry, and enough stamina.
-	if state != State.READY or is_parry_blocked():
+	# A dodge needs: not mid-hit-stagger, not locked in a parry. A dodge already in
+	# progress CAN be interrupted by a new one (user decision 2026-07-26) — parry
+	# recovery is the only real lockout.
+	if (state != State.READY and state != State.DODGING) or is_parry_blocked():
 		return
-	if stamina < dodge_stamina_cost:
-		buffered = ""
-		Events.dodge_failed.emit()
-		return
+	# STAMINA DISABLED (2026-07-26): dodges are free.
+	#if stamina < dodge_stamina_cost:
+	#	buffered = ""
+	#	Events.dodge_failed.emit()
+	#	return
 	var direction: Vector2 = ACTIONS[buffered]
 	buffered = ""
 	_start_dodge(direction)
@@ -201,21 +211,24 @@ func _consume_buffer() -> void:
 # --- dodge ----------------------------------------------------------------
 
 func _start_dodge(direction: Vector2) -> void:
-	if _tween and _tween.is_valid(): # TODO: remove tween as the driver but maybe movement as the check
-			_tween.kill()
+	if _tween and _tween.is_valid():
+		_tween.kill()   # interrupting an earlier dodge — redirect from wherever we are
 	state = State.DODGING
 	dodge_direction = direction
-	_spend_stamina(dodge_stamina_cost)
+	# STAMINA DISABLED (2026-07-26): dodges are free.
+	#_spend_stamina(dodge_stamina_cost)
 
-	# Only the SPRITE moves — the collider stays home so every shot still reaches
-	# _resolve(), where the LANE_ANSWERS rule (not geometry) decides the outcome.
-	# The whole nudge is these four lines: out, hang, back, done.
-	var target := _sprite_home + direction * dodge_distance
+	# The WHOLE node moves — sprite AND hurtbox together (user decision 2026-07-26):
+	# ducking really slips under head shots, and jumping INTO a shot's path means
+	# parry or pay. A right-answer dodge that stays in contact is still forgiven by
+	# LANE_ANSWERS in _resolve(). Lanes keep aiming at home_position, which no
+	# longer follows us — that's the whole point.
+	var target := home_position + direction * dodge_distance
 	_tween = create_tween()
-	_tween.tween_property(sprite, "position", target, dodge_out_time) \
+	_tween.tween_property(self, "position", target, dodge_out_time) \
 		.set_trans(dodge_out_trans).set_ease(dodge_out_ease)
 	_tween.tween_interval(dodge_hang_time)
-	_tween.tween_property(sprite, "position", _sprite_home, dodge_return_time) \
+	_tween.tween_property(self, "position", home_position, dodge_return_time) \
 		.set_trans(dodge_return_trans).set_ease(dodge_return_ease)
 	_tween.tween_callback(func() -> void: state = State.READY)
 
@@ -258,7 +271,8 @@ func _resolve(projectile: Projectile) -> void:
 
 
 func _parry_success(projectile: Projectile) -> void:
-	_gain_stamina(parry_stamina_refund)
+	# STAMINA DISABLED (2026-07-26): no refund while dodges are free.
+	#_gain_stamina(parry_stamina_refund)
 	projectile.deflect()
 	Events.parried.emit(projectile)
 	sprite.modulate = PARRY_STATE["parry_success"]
@@ -291,10 +305,10 @@ func _take_damage(projectile: Projectile) -> void:
 		Events.player_died.emit()
 		return
 
-	# Cancel any dodge nudge in progress and slide the sprite home.
+	# Cancel any dodge in progress and slide the whole body (hurtbox included) home.
 	state = State.HIT
 	_tween = create_tween()
-	_tween.tween_property(sprite, "position", _sprite_home, hit_recover_time) \
+	_tween.tween_property(self, "position", home_position, hit_recover_time) \
 		.set_trans(hit_recover_trans).set_ease(Tween.EASE_OUT)
 	_tween.tween_callback(func() -> void: state = State.READY)
 

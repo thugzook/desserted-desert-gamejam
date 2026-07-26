@@ -28,13 +28,16 @@ func _ready() -> void:
 	_refresh_hearts(_max_hp())
 	Events.run_started.connect(func() -> void: _refresh_hearts(_max_hp()))
 	Events.player_hit.connect(_refresh_hearts)
-	Events.dodge_failed.connect(_on_dodge_failed)
-	Events.stamina_changed.connect(_on_stamina_changed)
 	Events.run_ended.connect(_on_run_ended)
-	# The Player is _ready() before the HUD is, so its opening stamina_changed
-	# already went out. Seed the arc by hand instead of waiting for the first dodge.
-	if player != null:
-		_on_stamina_changed(player.stamina, player.max_stamina, 0.0)
+	# STAMINA DISABLED (2026-07-26): arc hidden, listeners off. Uncomment this
+	# block (and the ones in player.gd) to bring the mechanic back.
+	stamina_arc.visible = false
+	#Events.dodge_failed.connect(_on_dodge_failed)
+	#Events.stamina_changed.connect(_on_stamina_changed)
+	## The Player is _ready() before the HUD is, so its opening stamina_changed
+	## already went out. Seed the arc by hand instead of waiting for the first dodge.
+	#if player != null:
+	#	_on_stamina_changed(player.stamina, player.max_stamina, 0.0)
 
 
 func _process(_delta: float) -> void:

@@ -54,7 +54,8 @@ Follow the official GDScript style guide (https://docs.godotengine.org/en/stable
 
 ## Architecture invariants
 
-- **Dodging is a timed window + one visible rule table (v3, user decision 2026-07-25).** A dodge neutralizes an arriving projectile only if its direction is in `LANE_ANSWERS[lane]` (`player.gd` — the ONLY place the rule may live). The collider **never moves**; the sprite's nudge is pure presentation. Don't scatter matching logic anywhere else, and don't reintroduce physical-escape dodging — playtesting killed it (snap-back into the projectile felt terrible).
+- **Dodging is a timed window + one visible rule table, and the body really moves (v4, user decision 2026-07-26).** A dodge that stays in contact is forgiven only if its direction is in `LANE_ANSWERS[lane]` (`player.gd` — the ONLY place the rule may live). The whole Area2D — sprite AND hurtbox — tweens with the dodge, so ducking can physically clear a head shot, and dodging INTO a shot's path must be answered with a parry or takes damage. Dodges are interruptible at any time by a new dodge input (this is what fixed the v3 snap-back problem); only parry recovery locks you out. Lanes still aim at `home_position`, which does not follow the player.
+- **Stamina is DISABLED (user decision 2026-07-26)** — every call site is commented with a `STAMINA DISABLED` marker (player.gd + hud.gd); grep it to re-enable. Don't build new features on stamina without asking.
 - **Parry is a timer, not a state.** `parry_time` must never touch `state` — that's what makes parrying mid-dodge work for free.
 - Player movement state is **`enum State { HOME, DODGING, HIT, DEAD }`** in `player.gd`. No node-based state machines (rationale: `docs/05` §1).
 - Exactly **two autoloads**: `Events` (signal bus) and `Game` (run state + timer). No new autoloads without asking.
