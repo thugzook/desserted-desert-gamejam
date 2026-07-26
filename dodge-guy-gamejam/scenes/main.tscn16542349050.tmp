@@ -1,0 +1,53 @@
+[gd_scene format=3 uid="uid://bqqx63jfjrqy8"]
+
+[ext_resource type="Script" uid="uid://ch4qc1snynxp3" path="res://scripts/main.gd" id="1_main"]
+[ext_resource type="PackedScene" uid="uid://dy6m3j0picd3k" path="res://scenes/player.tscn" id="2_player"]
+[ext_resource type="Script" uid="uid://bu38kqdtp1cco" path="res://scripts/spawner.gd" id="3_spawner"]
+[ext_resource type="Script" uid="uid://c64100kvtmai4" path="res://scripts/projectile_data.gd" id="4_pdata"]
+[ext_resource type="PackedScene" uid="uid://cwyrrk1dsu60l" path="res://scenes/projectile.tscn" id="5_projectile"]
+[ext_resource type="Resource" path="res://resources/attacks/zippy.tres" id="6_zippy"]
+[ext_resource type="PackedScene" path="res://scenes/hud.tscn" id="9_hud"]
+
+[node name="Main" type="Node2D" unique_id=437035111]
+script = ExtResource("1_main")
+
+[node name="Ground" type="ColorRect" parent="." unique_id=2016103646]
+offset_top = 544.0
+offset_right = 1152.0
+offset_bottom = 552.0
+color = Color(0.38, 0.31, 0.23, 1)
+
+[node name="Player" parent="." unique_id=1999187846 instance=ExtResource("2_player")]
+position = Vector2(583, 444)
+dodge_distance = null
+dodge_out_time = null
+dodge_hang_time = null
+dodge_return_time = null
+dodge_out_trans = null
+dodge_out_ease = null
+dodge_return_trans = null
+dodge_return_ease = null
+parry_window = null
+parry_recovery = null
+parry_stamina_refund = null
+max_stamina = null
+dodge_stamina_cost = null
+stamina_regen = null
+stamina_regen_delay = null
+max_hp = null
+iframe_time = null
+hit_recover_time = null
+hit_recover_trans = null
+input_buffer = null
+
+[node name="Spawner" type="Node2D" parent="." unique_id=1575174766 node_paths=PackedStringArray("player")]
+script = ExtResource("3_spawner")
+projectile_scene = ExtResource("5_projectile")
+attacks = Array[ExtResource("4_pdata")]([ExtResource("6_zippy")])
+player = NodePath("../Player")
+
+[node name="Camera2D" type="Camera2D" parent="." unique_id=616773023]
+position = Vector2(576, 324)
+
+[node name="HUD" parent="." unique_id=1471756075 node_paths=PackedStringArray("player") instance=ExtResource("9_hud")]
+player = NodePath("../Player")
