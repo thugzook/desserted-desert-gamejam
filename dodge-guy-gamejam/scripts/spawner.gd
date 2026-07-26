@@ -72,17 +72,18 @@ func current_interval() -> float:
 	return lerpf(start_interval, min_interval, t)
 
 
-func _spawn() -> void:
-	var attack: ProjectileData = attacks.pick_random()
-	var lane: Projectile.Lane = lanes.pick_random()
-	var player_center := player.home_position
+## Where a shot in `lane` appears and the point it flies toward, as [from, toward].
+## Static so PatternSpawner shares the exact same aiming math — every lane travels
+## `radius` pixels to reach the player, which is what makes one lead time serve all seven.
+static func lane_endpoints(lane: Projectile.Lane, target: Player, radius: float) -> Array[Vector2]:
+	var player_center := target.home_position
 	# Offsets from centre, not absolute positions — Godot's Y grows DOWNWARD, so
 	# up (head) is negative and down (feet) is positive. Derived from the sprite,
 	# so resizing the player re-aims every lane automatically.
-	var head_offset_y := -(player.player_size.y / 2)
-	var feet_offset_y := player.player_size.y / 2
-	
-	var center_offset_x := player.player_size.x / 2
+	var head_offset_y := -(target.player_size.y / 2)
+	var feet_offset_y := target.player_size.y / 2
+
+	var center_offset_x := target.player_size.x / 2
 
 	# Anchored to home_position: every lane is a fixed, axis-aligned approach so
 	# the player can learn each one's answer (LANE_ANSWERS in player.gd decides).
@@ -90,27 +91,33 @@ func _spawn() -> void:
 	var toward: Vector2
 	match lane:
 		Projectile.Lane.ABOVE_CENTER:
-			from = player_center + Vector2(0.0, -spawn_radius)
+			from = player_center + Vector2(0.0, -radius)
 			toward = player_center
 		Projectile.Lane.ABOVE_LEFT:
-			from = player_center + Vector2(-center_offset_x, -spawn_radius)
+			from = player_center + Vector2(-center_offset_x, -radius)
 			toward = player_center + Vector2(-center_offset_x, 0.0)
 		Projectile.Lane.ABOVE_RIGHT:
-			from = player_center + Vector2(center_offset_x, -spawn_radius)
+			from = player_center + Vector2(center_offset_x, -radius)
 			toward = player_center + Vector2(center_offset_x, 0.0)
 		Projectile.Lane.FEET_LEFT:
-			from = player_center + Vector2(-spawn_radius, feet_offset_y)
+			from = player_center + Vector2(-radius, feet_offset_y)
 			toward = player_center + Vector2(0.0, feet_offset_y)
 		Projectile.Lane.FEET_RIGHT:
-			from = player_center + Vector2(spawn_radius, feet_offset_y)
+			from = player_center + Vector2(radius, feet_offset_y)
 			toward = player_center + Vector2(0.0, feet_offset_y)
 		Projectile.Lane.HEAD_LEFT:
-			from = player_center + Vector2(-spawn_radius, head_offset_y)
+			from = player_center + Vector2(-radius, head_offset_y)
 			toward = from + Vector2.RIGHT  # horizontal — reads as "at the head"
 		Projectile.Lane.HEAD_RIGHT:
-			from = player_center + Vector2(spawn_radius, head_offset_y)
+			from = player_center + Vector2(radius, head_offset_y)
 			toward = from + Vector2.LEFT
+	return [from, toward]
 
+
+func _spawn() -> void:
+	var attack: ProjectileData = attacks.pick_random()
+	var lane: Projectile.Lane = lanes.pick_random()
+	var endpoints := lane_endpoints(lane, player, spawn_radius)
 	var projectile: Projectile = projectile_scene.instantiate()
-	projectile.setup(attack, lane, from, toward, despawn_radius)
+	projectile.setup(attack, lane, endpoints[0], endpoints[1], despawn_radius)
 	add_child(projectile)

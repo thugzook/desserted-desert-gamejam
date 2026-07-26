@@ -1,0 +1,62 @@
+{
+  "bpm": 100,
+  "beats_per_measure": 4,
+  "steps_per_beat": 4,
+  "measures": 10,
+  "notes": [
+    { "measure": 0, "step": 0, "lane": "ABOVE_CENTER" },
+    { "measure": 0, "step": 4, "lane": "ABOVE_CENTER" },
+    { "measure": 0, "step": 8, "lane": "ABOVE_CENTER" },
+    { "measure": 0, "step": 12, "lane": "ABOVE_CENTER" },
+
+    { "measure": 1, "step": 0, "lane": "FEET_LEFT" },
+    { "measure": 1, "step": 4, "lane": "FEET_RIGHT" },
+    { "measure": 1, "step": 8, "lane": "FEET_LEFT" },
+    { "measure": 1, "step": 12, "lane": "FEET_RIGHT" },
+
+    { "measure": 2, "step": 0, "lane": "HEAD_LEFT" },
+    { "measure": 2, "step": 4, "lane": "HEAD_RIGHT" },
+    { "measure": 2, "step": 8, "lane": "HEAD_LEFT" },
+    { "measure": 2, "step": 12, "lane": "HEAD_RIGHT" },
+
+    { "measure": 3, "step": 0, "lane": "ANY" },
+    { "measure": 3, "step": 4, "lane": "ANY" },
+    { "measure": 3, "step": 8, "lane": "ANY" },
+    { "measure": 3, "step": 12, "lane": "ANY" },
+
+    { "measure": 4, "step": 0, "lane": "ABOVE_CENTER" },
+    { "measure": 4, "step": 4, "lane": "ABOVE_CENTER" },
+    { "measure": 4, "step": 6, "lane": "ABOVE_CENTER" },
+    { "measure": 4, "step": 8, "lane": "ABOVE_CENTER" },
+    { "measure": 4, "step": 12, "lane": "ABOVE_CENTER" },
+    { "measure": 4, "step": 14, "lane": "ABOVE_CENTER" },
+
+    { "measure": 5, "step": 0, "lane": "FEET_LEFT" },
+    { "measure": 5, "step": 4, "lane": "FEET_RIGHT" },
+    { "measure": 5, "step": 6, "lane": "FEET_LEFT" },
+    { "measure": 5, "step": 8, "lane": "FEET_RIGHT" },
+    { "measure": 5, "step": 12, "lane": "FEET_LEFT" },
+    { "measure": 5, "step": 14, "lane": "FEET_RIGHT" },
+
+    { "measure": 6, "step": 0, "lane": "ABOVE_CENTER" },
+    { "measure": 6, "step": 4, "lane": "HEAD_LEFT" },
+    { "measure": 6, "step": 8, "lane": "FEET_RIGHT" },
+    { "measure": 6, "step": 12, "lane": "ANY" },
+
+    { "measure": 7, "step": 0, "lane": "ABOVE_CENTER" },
+    { "measure": 7, "step": 8, "lane": "ANY" },
+
+    { "measure": 8, "step": 0, "lane": "FEET_LEFT" },
+    { "measure": 8, "step": 2, "lane": "FEET_RIGHT" },
+    { "measure": 8, "step": 6, "lane": "HEAD_LEFT" },
+    { "measure": 8, "step": 8, "lane": "FEET_RIGHT" },
+    { "measure": 8, "step": 10, "lane": "FEET_LEFT" },
+    { "measure": 8, "step": 14, "lane": "HEAD_RIGHT" },
+
+    { "measure": 9, "step": 0, "lane": "ABOVE_CENTER" },
+    { "measure": 9, "step": 4, "lane": "ANY" },
+    { "measure": 9, "step": 8, "lane": "ABOVE_CENTER" },
+    { "measure": 9, "step": 14, "lane": "HEAD_RIGHT" },
+    { "measure": 9, "step": 15, "lane": "HEAD_RIGHT" }
+  ]
+}

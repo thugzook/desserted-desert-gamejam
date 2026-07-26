@@ -1,0 +1,542 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Desserted Desert — Pattern Editor</title>
+<style>
+  /* FL-Studio-ish dark step sequencer. Single file, no dependencies, runs from file:// */
+  :root {
+    --bg: #1a1a1f;
+    --panel: #24242b;
+    --line: #38383f;
+    --line-beat: #4d4d57;
+    --line-measure: #767683;
+    --text: #d8d8dd;
+    --muted: #8b8b95;
+    --accent: #f2c14e;
+    --cell-w: 26px;
+    --cell-h: 34px;
+    --label-w: 168px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg); color: var(--text);
+    font: 14px/1.45 "Segoe UI", system-ui, sans-serif;
+    padding: 16px; user-select: none;
+  }
+  h1 { font-size: 18px; margin-bottom: 4px; }
+  h1 span { color: var(--accent); }
+  .sub { color: var(--muted); font-size: 12px; margin-bottom: 12px; }
+
+  .transport {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 10px;
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: 8px; padding: 10px 12px; margin-bottom: 10px;
+  }
+  .transport label { color: var(--muted); font-size: 12px; }
+  button, .filebtn {
+    background: #32323b; color: var(--text); border: 1px solid var(--line-beat);
+    border-radius: 6px; padding: 6px 12px; font: inherit; cursor: pointer;
+  }
+  button:hover, .filebtn:hover { background: #3d3d48; }
+  #play { min-width: 88px; background: #2e4632; border-color: #4a7050; }
+  #play.playing { background: #5c3232; border-color: #8a4a4a; }
+  input[type="number"] {
+    width: 64px; background: #17171b; color: var(--text);
+    border: 1px solid var(--line-beat); border-radius: 6px; padding: 6px 8px; font: inherit;
+  }
+  select {
+    background: #17171b; color: var(--text); border: 1px solid var(--line-beat);
+    border-radius: 6px; padding: 6px 8px; font: inherit;
+  }
+  .spacer { flex: 1; }
+  #stats { color: var(--muted); font-size: 12px; margin-bottom: 8px; }
+  #stats b { color: var(--text); font-weight: 600; }
+  #stats .hot { color: #e08a8a; }
+
+  #warnings { margin-bottom: 8px; }
+  .warn {
+    background: #3a2626; border: 1px solid #6e3a3a; color: #e8b4b4;
+    border-radius: 6px; padding: 6px 10px; font-size: 12px; margin-bottom: 4px;
+  }
+
+  .grid-scroll {
+    overflow-x: auto; border: 1px solid var(--line);
+    border-radius: 8px; background: var(--panel);
+  }
+  .grid {
+    position: relative;
+    display: grid;
+    grid-template-columns: var(--label-w) repeat(160, var(--cell-w));
+    width: max-content;
+  }
+  .corner, .lane-label {
+    position: sticky; left: 0; z-index: 3;
+    background: var(--panel);
+    border-right: 2px solid var(--line-measure);
+    padding: 0 10px;
+    display: flex; flex-direction: column; justify-content: center;
+  }
+  .corner { height: 26px; color: var(--muted); font-size: 11px; justify-content: center; }
+  .lane-label { height: var(--cell-h); }
+  .lane-label .name { font-size: 12px; font-weight: 600; display: flex; align-items: center; gap: 6px; }
+  .lane-label .dot { width: 9px; height: 9px; border-radius: 2px; flex: none; }
+  .lane-label .ans { font-size: 10px; color: var(--muted); }
+  .lane-label.any-lane .name { font-style: italic; }
+
+  .mhead {
+    grid-column: span 16; height: 26px;
+    display: flex; align-items: center; padding-left: 6px;
+    color: var(--muted); font-size: 11px;
+    border-left: 2px solid var(--line-measure);
+    border-bottom: 1px solid var(--line-beat);
+  }
+  .cell {
+    width: var(--cell-w); height: var(--cell-h);
+    border-left: 1px solid var(--line);
+    border-bottom: 1px solid var(--line);
+    cursor: pointer;
+  }
+  .cell.beat { border-left: 1px solid var(--line-beat); }
+  .cell.measure { border-left: 2px solid var(--line-measure); }
+  .cell:nth-child(2n) { background: rgba(255,255,255,0.012); }
+  .cell:hover { background: rgba(255,255,255,0.09); }
+  .cell.nosnap { cursor: default; background: rgba(0,0,0,0.28); }
+  .cell.nosnap:hover { background: rgba(0,0,0,0.28); }
+  /* A placed note: filled with its lane color via inline style; .note adds shape. */
+  .cell.note { box-shadow: inset 0 0 0 2px rgba(0,0,0,0.35); border-radius: 3px; }
+  .cell.note.any-note {
+    background-image: repeating-linear-gradient(45deg,
+      rgba(0,0,0,0.25) 0 4px, transparent 4px 8px);
+  }
+  .cell.conflict { outline: 2px solid #d05050; outline-offset: -2px; }
+
+  #playhead {
+    position: absolute; top: 0; bottom: 0; width: 2px;
+    background: var(--accent); z-index: 2; pointer-events: none;
+    display: none;
+  }
+  footer { margin-top: 10px; color: var(--muted); font-size: 12px; }
+  footer kbd {
+    background: #32323b; border: 1px solid var(--line-beat); border-radius: 4px;
+    padding: 0 5px; font-size: 11px;
+  }
+</style>
+</head>
+<body>
+
+<h1>Desserted Desert <span>Pattern Editor</span></h1>
+<div class="sub">10 measures of 4/4, 16th-note grid. Notes mark when the attack <b>arrives at the player</b> — the beat they must dodge or parry on. Export and drop the JSON into <code>dodge-guy-gamejam/patterns/</code>.</div>
+
+<div class="transport">
+  <button id="play">&#9654; Play</button>
+  <label>BPM <input id="bpm" type="number" min="40" max="240" step="1" value="100"></label>
+  <label>Snap
+    <select id="snap">
+      <option value="4">1/4</option>
+      <option value="2">1/8</option>
+      <option value="1" selected>1/16</option>
+    </select>
+  </label>
+  <span class="spacer"></span>
+  <button id="export">Export JSON</button>
+  <button id="copy">Copy JSON</button>
+  <label class="filebtn">Import<input id="import" type="file" accept=".json" hidden></label>
+  <button id="clear">Clear</button>
+</div>
+
+<div id="stats"></div>
+<div id="warnings"></div>
+
+<div class="grid-scroll" id="scroll">
+  <div class="grid" id="grid"></div>
+</div>
+
+<footer>
+  Click or drag to paint notes, click again to erase. <kbd>Space</kbd> plays/stops.
+  The striped <i>ANY</i> row keeps the beat but lets the game pick a random attack direction.
+  Your work autosaves in this browser.
+</footer>
+
+<script>
+'use strict';
+
+// ---- musical constants (must match pattern_spawner.gd's expectations) -------
+const MEASURES = 10;
+const STEPS_PER_MEASURE = 16;               // 4 beats x 4 sixteenths
+const TOTAL_STEPS = MEASURES * STEPS_PER_MEASURE;
+const STORAGE_KEY = 'ddd-pattern-editor';
+
+// Lane ids must match Projectile.Lane enum names in projectile.gd exactly;
+// 'ANY' is the pattern_spawner.gd special value for "undisclosed direction".
+// Answers mirror LANE_ANSWERS in player.gd (L/R/U/D = dodge direction).
+const LANES = [
+  { id: 'ABOVE_CENTER', label: 'Above Center', answer: 'step L or R', color: '#f2c14e', freq: 392.0 },
+  { id: 'ABOVE_LEFT',   label: 'Above Left',   answer: 'step right',  color: '#e8995a', freq: 440.0 },
+  { id: 'ABOVE_RIGHT',  label: 'Above Right',  answer: 'step left',   color: '#d97b5a', freq: 493.9 },
+  { id: 'FEET_LEFT',    label: 'Feet Left',    answer: 'jump',        color: '#7fb069', freq: 523.3 },
+  { id: 'FEET_RIGHT',   label: 'Feet Right',   answer: 'jump',        color: '#57a773', freq: 587.3 },
+  { id: 'HEAD_LEFT',    label: 'Head Left',    answer: 'duck',        color: '#6494ce', freq: 659.3 },
+  { id: 'HEAD_RIGHT',   label: 'Head Right',   answer: 'duck',        color: '#8a7fce', freq: 698.5 },
+  { id: 'ANY',          label: 'ANY',          answer: 'random direction', color: '#a9a9b2', any: true },
+];
+const ANSWERS = {
+  ABOVE_CENTER: ['L', 'R'], ABOVE_LEFT: ['R'], ABOVE_RIGHT: ['L'],
+  FEET_LEFT: ['U'], FEET_RIGHT: ['U'], HEAD_LEFT: ['D'], HEAD_RIGHT: ['D'],
+};
+
+// ---- state ------------------------------------------------------------------
+// One note = "laneIndex:column". A Set makes toggle/lookup trivial.
+let notes = new Set();
+let snap = 1;                // clickable every N columns (1=16th, 2=8th, 4=quarter)
+
+const $ = (id) => document.getElementById(id);
+const grid = $('grid'), scroll = $('scroll');
+const bpmInput = $('bpm'), playBtn = $('play');
+const cells = [];            // cells[lane][col] -> DOM element
+
+// ---- build the grid ---------------------------------------------------------
+function buildGrid() {
+  const frag = document.createDocumentFragment();
+
+  const corner = document.createElement('div');
+  corner.className = 'corner';
+  corner.textContent = 'lane / measure';
+  frag.appendChild(corner);
+  for (let m = 0; m < MEASURES; m++) {
+    const h = document.createElement('div');
+    h.className = 'mhead';
+    h.textContent = 'M' + (m + 1);
+    frag.appendChild(h);
+  }
+
+  LANES.forEach((lane, li) => {
+    const label = document.createElement('div');
+    label.className = 'lane-label' + (lane.any ? ' any-lane' : '');
+    label.innerHTML =
+      `<div class="name"><span class="dot" style="background:${lane.color}"></span>${lane.label}</div>` +
+      `<div class="ans">${lane.answer}</div>`;
+    frag.appendChild(label);
+
+    cells[li] = [];
+    for (let col = 0; col < TOTAL_STEPS; col++) {
+      const cell = document.createElement('div');
+      cell.className = 'cell';
+      if (col % STEPS_PER_MEASURE === 0) cell.classList.add('measure');
+      else if (col % 4 === 0) cell.classList.add('beat');
+      cell.dataset.lane = li;
+      cell.dataset.col = col;
+      cells[li][col] = cell;
+      frag.appendChild(cell);
+    }
+  });
+
+  const playhead = document.createElement('div');
+  playhead.id = 'playhead';
+  frag.appendChild(playhead);
+  grid.appendChild(frag);
+}
+
+// ---- note editing -----------------------------------------------------------
+const key = (lane, col) => lane + ':' + col;
+
+function setNote(lane, col, on) {
+  const k = key(lane, col);
+  if (on === notes.has(k)) return;
+  on ? notes.add(k) : notes.delete(k);
+  const cell = cells[lane][col];
+  cell.classList.toggle('note', on);
+  cell.classList.toggle('any-note', on && !!LANES[lane].any);
+  cell.style.background = on ? LANES[lane].color : '';
+  refresh();
+}
+
+let painting = false, paintOn = true;
+
+function cellFromEvent(e) {
+  const t = e.target;
+  if (!t.classList || !t.classList.contains('cell') || t.classList.contains('nosnap')) return null;
+  return { lane: +t.dataset.lane, col: +t.dataset.col };
+}
+
+grid.addEventListener('mousedown', (e) => {
+  const c = cellFromEvent(e);
+  if (!c) return;
+  e.preventDefault();
+  painting = true;
+  paintOn = !notes.has(key(c.lane, c.col));  // first cell decides paint vs erase
+  setNote(c.lane, c.col, paintOn);
+});
+grid.addEventListener('mouseover', (e) => {
+  if (!painting) return;
+  const c = cellFromEvent(e);
+  if (c) setNote(c.lane, c.col, paintOn);
+});
+window.addEventListener('mouseup', () => { painting = false; });
+
+// ---- snap -------------------------------------------------------------------
+function applySnap() {
+  snap = +$('snap').value;
+  for (let li = 0; li < LANES.length; li++)
+    for (let col = 0; col < TOTAL_STEPS; col++)
+      cells[li][col].classList.toggle('nosnap', col % snap !== 0);
+}
+$('snap').addEventListener('change', applySnap);
+
+// ---- warnings + stats -------------------------------------------------------
+// Same-16th notes whose dodge answers share nothing are physically un-dodgeable
+// (e.g. Above Left wants "right" while Above Right wants "left"). ANY is exempt —
+// its direction is unknowable until the game rolls it.
+function findConflicts() {
+  const byCol = new Map();
+  for (const k of notes) {
+    const [lane, col] = k.split(':').map(Number);
+    if (LANES[lane].any) continue;
+    if (!byCol.has(col)) byCol.set(col, []);
+    byCol.get(col).push(lane);
+  }
+  const out = [];
+  for (const [col, ls] of byCol) {
+    if (ls.length < 2) continue;
+    let shared = ANSWERS[LANES[ls[0]].id];
+    for (const l of ls.slice(1))
+      shared = shared.filter((a) => ANSWERS[LANES[l].id].includes(a));
+    if (shared.length === 0) out.push({ col, lanes: ls });
+  }
+  return out;
+}
+
+function colName(col) {
+  const beat = Math.floor((col % STEPS_PER_MEASURE) / 4) + 1;
+  const sixteenth = col % 4;
+  const frac = sixteenth === 0 ? '' : ' +' + sixteenth + '/16';
+  return 'Measure ' + (Math.floor(col / STEPS_PER_MEASURE) + 1) + ', beat ' + beat + frac;
+}
+
+function refresh() {
+  // conflicts
+  document.querySelectorAll('.cell.conflict').forEach((c) => c.classList.remove('conflict'));
+  const conflicts = findConflicts();
+  const warnBox = $('warnings');
+  warnBox.innerHTML = '';
+  for (const c of conflicts) {
+    for (const l of c.lanes) cells[l][c.col].classList.add('conflict');
+    const div = document.createElement('div');
+    div.className = 'warn';
+    div.textContent = '⚠ ' + colName(c.col) + ': ' +
+      c.lanes.map((l) => LANES[l].label).join(' + ') +
+      ' — no single dodge answers all of these.';
+    warnBox.appendChild(div);
+  }
+
+  // stats: note count + tightest gap between consecutive attack columns
+  const colsWithNotes = [...new Set([...notes].map((k) => +k.split(':')[1]))].sort((a, b) => a - b);
+  let minGap = Infinity;
+  for (let i = 1; i < colsWithNotes.length; i++)
+    minGap = Math.min(minGap, colsWithNotes[i] - colsWithNotes[i - 1]);
+  const bpm = clampBpm();
+  const stepSec = 60 / bpm / 4;
+  let gapText = '—';
+  if (minGap !== Infinity) {
+    const names = { 1: '16th', 2: '8th', 3: 'dotted 8th', 4: 'quarter', 8: 'half' };
+    const secs = (minGap * stepSec).toFixed(2);
+    gapText = '<b>' + secs + ' s</b> (' + (names[minGap] || minGap + '/16') + ')';
+    if (minGap * stepSec < 0.3) gapText = '<span class="hot">' + gapText + ' — very tight</span>';
+  }
+  $('stats').innerHTML = '<b>' + notes.size + '</b> notes · tightest gap: ' + gapText +
+    ' · loop length: <b>' + (TOTAL_STEPS * stepSec).toFixed(1) + ' s</b>';
+
+  save();
+}
+
+// ---- audio preview ----------------------------------------------------------
+// Standard Web Audio lookahead scheduler: a coarse setInterval walks a step
+// counter and schedules each hit a beat ahead at sample-accurate times.
+let ctx = null, playing = false, startTime = 0, nextStep = 0, schedTimer = null;
+
+const clampBpm = () => Math.min(240, Math.max(40, +bpmInput.value || 100));
+const stepSeconds = () => 60 / clampBpm() / 4;
+
+function tone(t, freq, type, gain, decay) {
+  const o = ctx.createOscillator(), g = ctx.createGain();
+  o.type = type; o.frequency.value = freq;
+  g.gain.setValueAtTime(gain, t);
+  g.gain.exponentialRampToValueAtTime(0.001, t + decay);
+  o.connect(g); g.connect(ctx.destination);
+  o.start(t); o.stop(t + decay + 0.02);
+}
+
+function scheduleColumn(col, t) {
+  if (col % 4 === 0) tone(t, col % STEPS_PER_MEASURE === 0 ? 1800 : 1200, 'sine', 0.06, 0.03);
+  for (let li = 0; li < LANES.length; li++) {
+    if (!notes.has(key(li, col))) continue;
+    const lane = LANES[li];
+    // ANY previews exactly what the game does: a random lane's pitch each pass,
+    // with a rougher waveform so it still reads as "unknown".
+    const freq = lane.any ? LANES[Math.floor(Math.random() * 7)].freq : lane.freq;
+    tone(t, freq, lane.any ? 'sawtooth' : 'triangle', 0.22, 0.18);
+  }
+}
+
+function schedulerTick() {
+  while (playing) {
+    const t = startTime + nextStep * stepSeconds();
+    if (t >= ctx.currentTime + 0.12) break;
+    scheduleColumn(nextStep % TOTAL_STEPS, t);
+    nextStep++;
+  }
+}
+
+function movePlayhead() {
+  if (!playing) return;
+  const playhead = $('playhead');
+  const elapsed = (ctx.currentTime - startTime) / stepSeconds();
+  if (elapsed >= 0) {
+    const labelW = 168, cellW = 26;
+    const x = labelW + (elapsed % TOTAL_STEPS) * cellW;
+    playhead.style.left = x + 'px';
+    // keep the playhead in view without fighting manual scrolling too hard
+    const viewL = scroll.scrollLeft + labelW, viewR = scroll.scrollLeft + scroll.clientWidth;
+    if (x < viewL || x > viewR - 40) scroll.scrollLeft = x - labelW - 20;
+  }
+  requestAnimationFrame(movePlayhead);
+}
+
+function togglePlay() {
+  if (playing) {
+    playing = false;
+    clearInterval(schedTimer);
+    playBtn.classList.remove('playing');
+    playBtn.innerHTML = '&#9654; Play';
+    $('playhead').style.display = 'none';
+    return;
+  }
+  ctx = ctx || new (window.AudioContext || window.webkitAudioContext)();
+  ctx.resume();
+  playing = true;
+  startTime = ctx.currentTime + 0.1;
+  nextStep = 0;
+  schedTimer = setInterval(schedulerTick, 25);
+  playBtn.classList.add('playing');
+  playBtn.innerHTML = '&#9632; Stop';
+  $('playhead').style.display = 'block';
+  requestAnimationFrame(movePlayhead);
+}
+
+playBtn.addEventListener('click', togglePlay);
+window.addEventListener('keydown', (e) => {
+  if (e.code === 'Space' && e.target.tagName !== 'INPUT' && e.target.tagName !== 'SELECT') {
+    e.preventDefault();
+    togglePlay();
+  }
+});
+bpmInput.addEventListener('change', () => { bpmInput.value = clampBpm(); refresh(); });
+
+// ---- import / export --------------------------------------------------------
+function toPattern() {
+  const list = [...notes]
+    .map((k) => k.split(':').map(Number))
+    .sort((a, b) => a[1] - b[1] || a[0] - b[0])
+    .map(([lane, col]) => ({
+      measure: Math.floor(col / STEPS_PER_MEASURE),
+      step: col % STEPS_PER_MEASURE,
+      lane: LANES[lane].id,
+    }));
+  return {
+    bpm: clampBpm(),
+    beats_per_measure: 4,
+    steps_per_beat: 4,
+    measures: MEASURES,
+    notes: list,
+  };
+}
+
+$('export').addEventListener('click', () => {
+  const blob = new Blob([JSON.stringify(toPattern(), null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'pattern.json';
+  a.click();
+  URL.revokeObjectURL(a.href);
+});
+
+$('copy').addEventListener('click', async () => {
+  const text = JSON.stringify(toPattern(), null, 2);
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch {
+    // file:// pages don't always get the async clipboard — fall back
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    ta.remove();
+  }
+  const btn = $('copy'), old = btn.textContent;
+  btn.textContent = 'Copied!';
+  setTimeout(() => { btn.textContent = old; }, 1200);
+});
+
+function loadPattern(data) {
+  const laneIndex = Object.fromEntries(LANES.map((l, i) => [l.id, i]));
+  const skipped = [];
+  clearAll();
+  if (Number.isFinite(+data.bpm)) bpmInput.value = Math.min(240, Math.max(40, +data.bpm));
+  for (const n of data.notes || []) {
+    const li = laneIndex[n.lane];
+    const col = (+n.measure || 0) * STEPS_PER_MEASURE + (+n.step || 0);
+    if (li === undefined || col < 0 || col >= TOTAL_STEPS) { skipped.push(n); continue; }
+    setNote(li, col, true);
+  }
+  refresh();
+  if (skipped.length) alert(skipped.length + ' note(s) outside the grid or with unknown lanes were skipped.');
+}
+
+$('import').addEventListener('change', (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  file.text().then((text) => {
+    try { loadPattern(JSON.parse(text)); }
+    catch { alert("That file isn't valid pattern JSON."); }
+  });
+  e.target.value = '';
+});
+
+function clearAll() {
+  for (const k of [...notes]) {
+    const [lane, col] = k.split(':').map(Number);
+    setNote(lane, col, false);
+  }
+}
+$('clear').addEventListener('click', () => {
+  if (notes.size === 0 || confirm('Erase all ' + notes.size + ' notes?')) { clearAll(); refresh(); }
+});
+
+// ---- autosave ---------------------------------------------------------------
+function save() {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ bpm: clampBpm(), notes: [...notes] }));
+  } catch { /* private browsing etc. — losing autosave is fine */ }
+}
+
+function restore() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(STORAGE_KEY));
+    if (!saved) return;
+    bpmInput.value = saved.bpm || 100;
+    for (const k of saved.notes || []) {
+      const [lane, col] = k.split(':').map(Number);
+      if (lane >= 0 && lane < LANES.length && col >= 0 && col < TOTAL_STEPS) setNote(lane, col, true);
+    }
+  } catch { /* corrupted save — start blank */ }
+}
+
+// ---- init -------------------------------------------------------------------
+buildGrid();
+applySnap();
+restore();
+refresh();
+</script>
+</body>
+</html>
