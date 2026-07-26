@@ -51,7 +51,7 @@ const ANY_LANE := "ANY"
 ## Beats before a note ARRIVES that its call tick plays. With 4 (and a 4-beat
 ## rest between measures) each phrase is heard as "bum bum bum bum" during the
 ## rest, then answered by the attacks on those same beats. 0 = no calls.
-@export var cue_beats := 4.0
+@export var cue_beats := 5.0
 ## The tick sound. Leave empty to use the built-in assets/sounds/cue_tick.wav.
 @export var cue_sound: AudioStream
 
