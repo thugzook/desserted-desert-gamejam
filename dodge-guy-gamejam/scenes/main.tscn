@@ -2,7 +2,7 @@
 
 [ext_resource type="Script" uid="uid://ch4qc1snynxp3" path="res://scripts/main.gd" id="1_main"]
 [ext_resource type="PackedScene" uid="uid://dy6m3j0picd3k" path="res://scenes/player.tscn" id="2_player"]
-[ext_resource type="Script" path="res://scripts/pattern_spawner.gd" id="3_spawner"]
+[ext_resource type="Script" uid="uid://b7u53eemj6khl" path="res://scripts/pattern_spawner.gd" id="3_spawner"]
 [ext_resource type="PackedScene" uid="uid://cwyrrk1dsu60l" path="res://scenes/projectile.tscn" id="5_projectile"]
 [ext_resource type="Resource" path="res://resources/attacks/zippy.tres" id="6_zippy"]
 [ext_resource type="PackedScene" uid="uid://b82fbjsmxlm0b" path="res://scenes/hud.tscn" id="9_hud"]
@@ -24,7 +24,6 @@ script = ExtResource("3_spawner")
 projectile_scene = ExtResource("5_projectile")
 attack = ExtResource("6_zippy")
 player = NodePath("../Player")
-pattern_path = "res://patterns/test_pattern.json"
 
 [node name="Camera2D" type="Camera2D" parent="." unique_id=616773023]
 position = Vector2(576, 324)
