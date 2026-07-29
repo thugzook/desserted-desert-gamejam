@@ -18,7 +18,9 @@ var despawn_radius := 1500.0
 
 var _pulse: Tween
 
-@onready var sprite: ColorRect = $Sprite
+## The drawn arrow. Everything the player sees lives here — telegraph blink,
+## and the ghost fade on a dodged hit (data.ghost_alpha), all via modulate:a.
+@onready var art: Sprite2D = $Arrow
 @onready var shape: CollisionShape2D = $CollisionShape2D
 
 
@@ -33,20 +35,17 @@ func setup(attack: ProjectileData, in_lane: Lane, from: Vector2, toward: Vector2
 
 
 func _ready() -> void:
-	sprite.color = data.color
-	sprite.size = data.size
-	sprite.position = -data.size * 0.5
 	# A shape saved in the .tscn is SHARED by every instance of it — resizing it
 	# here would resize every other projectile on screen. So each one gets its own.
-	var box := RectangleShape2D.new()
-	box.size = data.size
-	shape.shape = box
+	var rect := RectangleShape2D.new()
+	rect.size = data.size
+	shape.shape = rect
 	rotation = direction.angle()
 	# FLAIR: the telegraph is just a pulse for now — a wind-up animation, a
 	# warning line, or a sound would all read better. See docs/04 §2.
 	_pulse = create_tween().set_loops()
-	_pulse.tween_property(sprite, "modulate:a", data.pulse_min_alpha, data.pulse_rate)
-	_pulse.tween_property(sprite, "modulate:a", 1.0, data.pulse_rate)
+	_pulse.tween_property(art, "modulate:a", data.pulse_min_alpha, data.pulse_rate)
+	_pulse.tween_property(art, "modulate:a", 1.0, data.pulse_rate)
 
 
 func _physics_process(delta: float) -> void:
@@ -87,12 +86,12 @@ func ghost() -> void:
 	# where direct collision-flag writes are silently blocked.
 	set_deferred("monitoring", false)
 	set_deferred("monitorable", false)
-	sprite.modulate.a = data.ghost_alpha
+	art.modulate.a = data.ghost_alpha
 
 
-## Telegraph over. The blink must STOP here — a solid rectangle is the cue that
+## Telegraph over. The blink must STOP here — a solid arrow is the cue that
 ## says "this one is live now", and it's the whole readability contract.
 func _launch() -> void:
 	if _pulse and _pulse.is_valid():
 		_pulse.kill()
-	sprite.modulate.a = 1.0
+	art.modulate.a = 1.0

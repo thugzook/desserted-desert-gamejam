@@ -8,3 +8,19 @@ First pass
   - Reverted this
 
 At this point i also asked claude to make me a functional architecture map so that I can make edits on my own
+
+7/26
+===
+Demoed the game to Matt, and there were a few things i noticed
+* parrying was instinctually obvious for him
+* he never noticed the stamina system i had crafted
+* he kept trying to press left multiple times to dodge an arrow (kind of like moving in space) rather than it being a real dodge
+* he didn't understand the projectile system (can i dodge the middle one? i don't really get it)
+
+Some insights I got about the core experience
+* the core experience is dodging. I need to make that FEEL good before even thinking about moving farther in the game.
+
+action items
+* remove stamina from the game
+* anchor on some player character
+* nail the direction and action i want to player to do

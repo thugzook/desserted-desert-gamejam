@@ -1,20 +1,64 @@
 [gd_scene format=3 uid="uid://dy6m3j0picd3k"]
 
 [ext_resource type="Script" uid="uid://b3fbogw4nclcv" path="res://scripts/player.gd" id="1_player"]
+[ext_resource type="Script" uid="uid://dxo6gwbsqcm56" path="res://scripts/player_art.gd" id="2_art"]
+[ext_resource type="Texture2D" uid="uid://ctp1lio35criu" path="res://assets/art/maki-front.png" id="3_qhqgy"]
+[ext_resource type="Texture2D" uid="uid://b8ks6vtwuuioh" path="res://assets/art/side-right.png" id="4_dqkch"]
+[ext_resource type="Texture2D" uid="uid://d4nhtm8oovro7" path="res://assets/art/maki-left.png" id="5_fjrip"]
+[ext_resource type="Texture2D" uid="uid://bp0ad8mllebcp" path="res://assets/art/maki-jump.png" id="6_smehm"]
+[ext_resource type="Texture2D" uid="uid://b58moaycm4wk1" path="res://assets/art/crouch.png" id="7_ur7pv"]
+[ext_resource type="AudioStream" uid="uid://oaf7whpp4pk8" path="res://assets/sounds/undertale_dog_bark.mp3" id="8_bark"]
+[ext_resource type="AudioStream" uid="uid://cv2mhiennx4mt" path="res://assets/sounds/healing.mp3" id="9_heal"]
+[ext_resource type="Shader" uid="uid://cecf0y7opend4" path="res://assets/shaders/idle_breath.gdshader" id="10_breath"]
 
-[sub_resource type="RectangleShape2D" id="RectangleShape2D_hurtbox"]
-size = Vector2(190, 190)
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_breath"]
+shader = ExtResource("10_breath")
+shader_parameter/breath_amount = 0.03
+shader_parameter/breath_speed = 2.5
+
+[sub_resource type="CompressedTexture2D" id="CompressedTexture2D_y4r1p"]
+load_path = "res://.godot/imported/maki-left.png-6e605d5139a420e1e823fdc1148af2f2.ctex"
+
+[sub_resource type="CapsuleShape2D" id="CapsuleShape2D_o6xl0"]
+radius = 65.0
+height = 206.0
 
 [node name="Player" type="Area2D" unique_id=346620811]
+texture_filter = 1
 monitorable = false
 script = ExtResource("1_player")
+dodge_distance = Vector2(40, 100)
 
 [node name="Sprite" type="ColorRect" parent="." unique_id=528871655]
+texture_filter = 1
 offset_left = -100.0
 offset_top = -100.0
 offset_right = 100.0
 offset_bottom = 100.0
-color = Color(0.66, 0.66, 0.7, 1)
+color = Color(0.65882355, 0.65882355, 0.69803923, 0)
+
+[node name="Art" type="Sprite2D" parent="Sprite" unique_id=774301962]
+texture_filter = 1
+material = SubResource("ShaderMaterial_breath")
+position = Vector2(95, 108)
+scale = Vector2(0.74626863, 0.74626863)
+texture = SubResource("CompressedTexture2D_y4r1p")
+offset = Vector2(0, 4.7922135e-06)
+script = ExtResource("2_art")
+idle_texture = ExtResource("3_qhqgy")
+dodge_left_texture = ExtResource("5_fjrip")
+dodge_right_texture = ExtResource("4_dqkch")
+dodge_up_texture = ExtResource("6_smehm")
+dodge_down_texture = ExtResource("7_ur7pv")
+dodge_up_height = 250.0
+dodge_down_height = 140.0
 
 [node name="Collision2D_hurtbox" type="CollisionShape2D" parent="." unique_id=415810595]
-shape = SubResource("RectangleShape2D_hurtbox")
+position = Vector2(-1, 18)
+shape = SubResource("CapsuleShape2D_o6xl0")
+
+[node name="DodgeSound" type="AudioStreamPlayer" parent="." unique_id=1522591520]
+stream = ExtResource("8_bark")
+
+[node name="HitSound" type="AudioStreamPlayer" parent="." unique_id=720424264]
+stream = ExtResource("9_heal")

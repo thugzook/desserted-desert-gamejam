@@ -4,9 +4,9 @@
   "steps_per_beat": 4,
   "measures": 10,
   "notes": [
-	{ "measure": 0, "step": 0, "lane": "ABOVE_CENTER" },
+	{ "measure": 0, "step": 0, "lane": "ABOVE_LEFT" },
 	{ "measure": 0, "step": 4, "lane": "ABOVE_CENTER" },
-	{ "measure": 0, "step": 8, "lane": "ABOVE_CENTER" },
+	{ "measure": 0, "step": 8, "lane": "ABOVE_RIGHT" },
 	{ "measure": 0, "step": 12, "lane": "ABOVE_CENTER" },
 
 	{ "measure": 1, "step": 0, "lane": "FEET_LEFT" },

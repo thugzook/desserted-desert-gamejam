@@ -2,10 +2,13 @@ class_name Player
 extends Area2D
 ## The player. A dodge is a TIMED WINDOW with a DIRECTION RULE: press the right
 ## direction for the incoming lane while it arrives and the projectile is
-## neutralized (it ghosts through you). The WHOLE body moves — hurtbox included
-## (user decision 2026-07-26) — so ducking really slips under head shots, and
-## dodging INTO a shot's path means parry or pay. Dodges are interruptible: a new
-## dodge input redirects mid-animation; only parry recovery locks you out.
+## neutralized (it ghosts through you). By default only the SPRITE nudges — the
+## hurtbox stays home, so every shot still reaches _resolve() and LANE_ANSWERS is
+## the sole judge (user decision 2026-07-27, reverting the moving-hurtbox trial:
+## a 25px nudge on a 190px hurtbox cleared nothing and only silenced feedback).
+## Flip dodge_moves_hurtbox to make dodges spatial instead. Dodges are
+## interruptible: a new dodge input redirects mid-animation; only parry recovery
+## locks you out.
 ## STAMINA IS DISABLED — every stamina line is commented, grep "STAMINA DISABLED".
 ##
 ## The dodge rulebook is LANE_ANSWERS below — one table, edit freely.
@@ -14,14 +17,6 @@ extends Area2D
 ## frames / 60 = seconds. (5 frames = 0.08s, 9 frames = 0.15s, 12 frames = 0.20s)
 
 enum State { READY, DODGING, HIT, DEAD }
-
-const PARRY_STATE := {
-	"idle": Color.CORAL,
-	"parry_active": Color.BLUE,
-	"parry_whiffed": Color.BLACK,
-	"parry_blocked": Color.RED,
-	"parry_success": Color.WHITE
-}
 
 const ACTIONS := {
 	"dodge_left": Vector2.LEFT,
@@ -44,10 +39,21 @@ const LANE_ANSWERS := {
 }
 
 @export_group("Dodge Feel")
-## How far the WHOLE body (sprite + hurtbox) moves: x = sideways, y = up/down.
-## This is a real reach now — raise y and ducks/jumps physically clear head/feet
-## shots; raise x and sidesteps can clear overheads. Small values keep dodging
-## mostly rule-based (LANE_ANSWERS), big values make it spatial.
+## OFF (default): only the sprite nudges, the hurtbox never moves, and LANE_ANSWERS
+## alone decides every shot — dodging is a timed window plus the rule table.
+## ON: the whole Area2D moves, so geometry decides too and a dodge can physically
+## clear (or walk into) a lane. Only turn this on if dodge_distance is large
+## relative to the hurtbox — at 190px tall, a 20px nudge clears nothing and just
+## severs contact so successful dodges give no feedback.
+@export var dodge_moves_hurtbox := false
+## ON: starting a dodge COMMITS you — no new dodge input until it finishes.
+## Landing a dodge or a parry releases the lock the instant it connects, so clean
+## play still keeps tempo; only a whiff actually costs you the animation. This is
+## what stops mashing from being a strategy. OFF: dodges are freely interruptible.
+@export var dodge_commits := true
+## How far a dodge moves: x = sideways, y = up/down. With dodge_moves_hurtbox OFF
+## this is pure presentation — a flinch, not a reach — so keep it small enough to
+## read as body language. With it ON, this is your actual escape distance.
 @export var dodge_distance := Vector2(25, 20)
 ## Seconds to dash out (0.08 = 5 frames). Lower = snappier. Out + hang + return
 ## together are the ACTIVE WINDOW — dodge while a shot arrives and you've dodged it.
@@ -75,6 +81,12 @@ const LANE_ANSWERS := {
 @export var parry_recovery := 0.35
 ## Bars handed back on a successful parry. High = parrying is the skilled way to keep moving.
 @export var parry_stamina_refund := 1
+## Placeholder feedback until there's real parry art: the color art flashes to
+## on a parry press, fading back to normal. Swap this system out once you have
+## a dedicated parry sprite frame.
+@export var parry_flash_color := Color.WHITE
+## Seconds for the flash to fade back to normal (0.15 = 9 frames).
+@export var parry_flash_time := 0.15
 
 @export_group("Stamina")
 ## How many dodges a full tank holds. Each bar is exactly one dodge, so a Phase 2
@@ -93,7 +105,13 @@ const LANE_ANSWERS := {
 @export var max_hp := 3
 ## Seconds of invincibility after a hit. Prevents one cluster from killing you outright.
 @export var iframe_time := 0.9
-## Seconds to slide back home after being hit.
+## Seconds for ONE on/off blink while invincible. Lower = more frantic strobe.
+## 0 turns the flash off. Keep it well under iframe_time or you get one slow pulse.
+@export var iframe_flash_period := 0.12
+## How faint the sprite goes at the bottom of each i-frame blink. 0 = fully
+## invisible (hard strobe), 1 = no visible flash at all.
+@export_range(0.0, 1.0) var iframe_flash_alpha := 0.25
+## Seconds to slide back home after being hit. 0 = snap home instantly.
 @export var hit_recover_time := 0.18
 ## Easing curve on the slide home after a hit. SINE = limp; BACK = a stagger.
 @export var hit_recover_trans: Tween.TransitionType = Tween.TRANS_SINE
@@ -115,10 +133,20 @@ var regen_block := 0.0
 var buffered := ""            # buffered input action name
 var buffer_left := 0.0
 var dodge_direction := Vector2.ZERO   # which way the current dodge went (valid while DODGING)
+var _dodge_scored := false            # this dodge landed something — the commit lock is released
 var _tween: Tween
+var _iframe_tween: Tween      # the blink. Its own tween so it can outlive the slide home.
+var _parry_flash_tween: Tween
 var _sprite_home := Vector2.ZERO      # the sprite's resting local position
 
 @onready var sprite: ColorRect = $Sprite
+## The drawn body. Rides on the sprite box, so it inherits the dodge nudge and
+## the i-frame blink. Owns one image per direction — see player_art.gd.
+@onready var art: PlayerArt = $Sprite/Art
+## Sounds are named for WHEN they play, not what they contain — swap the stream
+## or set volume on the node in the Inspector.
+@onready var dodge_sound: AudioStreamPlayer = $DodgeSound
+@onready var hit_sound: AudioStreamPlayer = $HitSound
 
 
 func _ready() -> void:
@@ -131,7 +159,7 @@ func _ready() -> void:
 	#stamina = max_stamina
 	#_emit_stamina()
 	area_entered.connect(_on_area_entered)
-	sprite.modulate = Color.CORAL
+	#sprite.modulate = Color.CORAL
 
 
 func _physics_process(delta: float) -> void:
@@ -151,10 +179,7 @@ func is_parry_active() -> bool:
 
 ## True only if user has parry on cooldown because they missed their parry
 func is_parry_on_cooldown() -> bool:
-	if (parry_time > parry_window):
-		#sprite.modulate = PLAYER_STATE["parry_whiffed"]
-		return true
-	return false
+	return parry_time > parry_window
  
 func is_parry_blocked() -> bool:
 	return is_parry_active() or is_parry_on_cooldown()
@@ -163,15 +188,16 @@ func is_parry_blocked() -> bool:
 # --- timers ---------------------------------------------------------------
 
 func _tick_timers(delta: float) -> void:
+	var was_invincible := iframe_left > 0.0
 	iframe_left = maxf(iframe_left - delta, 0.0)
+	if was_invincible and iframe_left <= 0.0:
+		_end_iframe_flash()   # i-frames just expired — stop blinking, go solid
 	regen_block = maxf(regen_block - delta, 0.0)
 	buffer_left = maxf(buffer_left - delta, 0.0)
 	if parry_time >= 0.0:
 		parry_time += delta
 		if parry_time >= parry_recovery:
 			_end_parry()         # recovery over, free to act again
-		elif is_parry_on_cooldown():
-			sprite.modulate = PARRY_STATE["parry_whiffed"]
 
 
 # --- input ----------------------------------------------------------------
@@ -194,10 +220,10 @@ func _consume_buffer() -> void:
 			buffered = ""
 			_start_parry()
 		return
-	# A dodge needs: not mid-hit-stagger, not locked in a parry. A dodge already in
-	# progress CAN be interrupted by a new one (user decision 2026-07-26) — parry
-	# recovery is the only real lockout.
-	if (state != State.READY and state != State.DODGING) or is_parry_blocked():
+	# A dodge needs: input not committed to a dodge already, and not locked in a
+	# parry. Note this gate is BELOW the parry branch on purpose — parrying mid-dodge
+	# must stay free no matter what the dodge lock says.
+	if not _can_dodge_now() or is_parry_blocked():
 		return
 	# STAMINA DISABLED (2026-07-26): dodges are free.
 	#if stamina < dodge_stamina_cost:
@@ -215,35 +241,79 @@ func _start_dodge(direction: Vector2) -> void:
 		_tween.kill()   # interrupting an earlier dodge — redirect from wherever we are
 	state = State.DODGING
 	dodge_direction = direction
+	_dodge_scored = false   # a fresh dodge is unproven, so it commits you again
 	# STAMINA DISABLED (2026-07-26): dodges are free.
 	#_spend_stamina(dodge_stamina_cost)
 
-	# The WHOLE node moves — sprite AND hurtbox together (user decision 2026-07-26):
-	# ducking really slips under head shots, and jumping INTO a shot's path means
-	# parry or pay. A right-answer dodge that stays in contact is still forgiven by
-	# LANE_ANSWERS in _resolve(). Lanes keep aiming at home_position, which no
-	# longer follows us — that's the whole point.
-	var target := home_position + direction * dodge_distance
+	# By default only the sprite travels, so the collider stays put and every shot
+	# still reaches _resolve() — where the LANE_ANSWERS rule, not geometry, decides.
+	# The whole nudge is these four lines: out, hang, back, done.
+	_recenter_idle_node()
+	var mover := _dodge_mover()
+	var origin := _dodge_origin()
+	var target := origin + direction * (dodge_distance / 2 if dodge_direction == Vector2.DOWN else dodge_distance)
 	_tween = create_tween()
-	_tween.tween_property(self, "position", target, dodge_out_time) \
+	_tween.tween_property(mover, "position", target, dodge_out_time) \
 		.set_trans(dodge_out_trans).set_ease(dodge_out_ease)
 	_tween.tween_interval(dodge_hang_time)
-	_tween.tween_property(self, "position", home_position, dodge_return_time) \
+	_tween.tween_property(mover, "position", origin, dodge_return_time) \
 		.set_trans(dodge_return_trans).set_ease(dodge_return_ease)
-	_tween.tween_callback(func() -> void: state = State.READY)
+	_tween.tween_callback(_end_dodge)
 
+	art.show_dodge(direction)   # pose only — the rule table still decides the hit
 	Events.dodged.emit(direction)
 	_on_dodge_start(direction)
 
 
+## The ONE place a dodge closes. Only the tween callback above may call this —
+## the active window is out + hang + return, and landing a shot must not cut it
+## short (see the class docstring).
+func _end_dodge() -> void:
+	state = State.READY
+	art.show_idle()
+
+
+## Can a dodge START this instant? READY always. Mid-dodge only if dodges don't
+## commit, or this one already landed a dodge or a parry. HIT and DEAD never accept
+## one. This is the whole lock — "land anything, keep moving; whiff and you're stuck."
+func _can_dodge_now() -> bool:
+	if state == State.READY:
+		return true
+	if state != State.DODGING:
+		return false
+	return not dodge_commits or _dodge_scored
+
+
+## Which node a dodge displaces, and where that node rests. One pair of accessors
+## so flipping dodge_moves_hurtbox retargets the dodge, the hit-slide, and the
+## interrupt logic all at once.
+func _dodge_mover() -> Node:
+	if dodge_moves_hurtbox:
+		return self
+	return sprite
+
+
+func _dodge_origin() -> Vector2:
+	return home_position if dodge_moves_hurtbox else _sprite_home
+
+
+## Snap whichever node ISN'T dodging back to its rest spot. Only matters when
+## dodge_moves_hurtbox is toggled in the Inspector mid-run — without this the
+## previously-displaced node would stay stranded off-centre forever.
+func _recenter_idle_node() -> void:
+	if dodge_moves_hurtbox:
+		sprite.position = _sprite_home
+	else:
+		position = home_position
+
+
 func _start_parry() -> void:
 	parry_time = 0.0
-	sprite.modulate = PARRY_STATE["parry_active"]
-	
+	_flash_parry()
+
 func _end_parry() -> void:
 	parry_time = -1
-	sprite.modulate = PARRY_STATE["idle"]
-	
+
 
 
 # --- taking hits ----------------------------------------------------------
@@ -275,8 +345,10 @@ func _parry_success(projectile: Projectile) -> void:
 	#_gain_stamina(parry_stamina_refund)
 	projectile.deflect()
 	Events.parried.emit(projectile)
-	sprite.modulate = PARRY_STATE["parry_success"]
-	
+	# Same rule as a landed dodge: succeed at anything and you keep moving. If this
+	# parry happened mid-dodge, it releases that dodge's commit lock too.
+	_dodge_scored = true
+
 	# reset parry window because successful parry
 	_end_parry()
 
@@ -284,7 +356,12 @@ func _parry_success(projectile: Projectile) -> void:
 func _dodge_success(projectile: Projectile) -> void:
 	projectile.ghost()
 	Events.projectile_dodged.emit(projectile)
-	state = State.READY # reset 
+	_dodge_scored = true   # you landed it — dodge again whenever you like
+	dodge_sound.play()     # bark! play() restarts it, so rapid dodges each bark
+	# Deliberately does NOT end the dodge: the active window is out + hang + return,
+	# and only the tween's callback closes it. Clearing state here used to make the
+	# FIRST shot you dodged correctly the last one you were safe from, so anything
+	# else arriving in the same window landed as a hit.
 
 
 func _take_damage(projectile: Projectile) -> void:
@@ -296,6 +373,7 @@ func _take_damage(projectile: Projectile) -> void:
 	# would set state back to HOME and resurrect a dead player.
 	if _tween and _tween.is_valid():
 		_tween.kill()
+	art.show_idle()   # killing the tween skips _end_dodge, so drop the pose here
 
 	Events.player_hit.emit(hp)
 	_on_hit(projectile)
@@ -305,12 +383,53 @@ func _take_damage(projectile: Projectile) -> void:
 		Events.player_died.emit()
 		return
 
-	# Cancel any dodge in progress and slide the whole body (hurtbox included) home.
+	# Getting hit puts you back to start, whatever you were in the middle of: the
+	# dodge is cancelled (tween killed above), the body slides home, and the blink
+	# says "you're invincible right now" for as long as iframe_left lasts.
+	_start_iframe_flash()
+	_recenter_idle_node()   # the node the dodge DIDN'T move can't be left stranded
 	state = State.HIT
 	_tween = create_tween()
-	_tween.tween_property(self, "position", home_position, hit_recover_time) \
+	_tween.tween_property(_dodge_mover(), "position", _dodge_origin(), hit_recover_time) \
 		.set_trans(hit_recover_trans).set_ease(Tween.EASE_OUT)
 	_tween.tween_callback(func() -> void: state = State.READY)
+
+
+# --- parry flash ------------------------------------------------------------
+
+## Blink art white on a parry press, fading back to normal. self_modulate only
+## affects THIS node (never cascades to children), so it can't leak onto — or
+## get overwritten by — the sprite box's own modulate (used for the i-frame
+## blink) or any future child art gets.
+func _flash_parry() -> void:
+	if _parry_flash_tween and _parry_flash_tween.is_valid():
+		_parry_flash_tween.kill()
+	art.self_modulate = parry_flash_color
+	_parry_flash_tween = create_tween()
+	_parry_flash_tween.tween_property(art, "self_modulate", Color.WHITE, parry_flash_time)
+
+
+# --- i-frame flash --------------------------------------------------------
+
+## Blink the sprite for as long as you're invincible. Only ALPHA is animated, never
+## the colour — art's self_modulate owns the hue, so parrying mid-blink still reads normally.
+func _start_iframe_flash() -> void:
+	if _iframe_tween and _iframe_tween.is_valid():
+		_iframe_tween.kill()
+	if iframe_flash_period <= 0.0:
+		return
+	var half := iframe_flash_period * 0.5
+	# Looped forever on purpose: _tick_timers kills it the frame i-frames expire, so
+	# the blink always matches iframe_time even if you tune iframe_time at runtime.
+	_iframe_tween = create_tween().set_loops()
+	_iframe_tween.tween_property(sprite, "modulate:a", iframe_flash_alpha, half)
+	_iframe_tween.tween_property(sprite, "modulate:a", 1.0, half)
+
+
+func _end_iframe_flash() -> void:
+	if _iframe_tween and _iframe_tween.is_valid():
+		_iframe_tween.kill()
+	sprite.modulate.a = 1.0   # never leave the player stuck half-transparent
 
 
 # --- stamina --------------------------------------------------------------
@@ -358,4 +477,4 @@ func _on_dodge_start(_direction: Vector2) -> void:
 
 ## FLAIR: you just lost a heart.
 func _on_hit(_projectile: Projectile) -> void:
-	pass
+	hit_sound.play()

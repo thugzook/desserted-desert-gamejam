@@ -1,3 +1,6 @@
 # Godot 4+ specific ignores
 .godot/
 /android/
+
+# Web export output (zip build/web/ and upload it to itch — don't commit it)
+/build/

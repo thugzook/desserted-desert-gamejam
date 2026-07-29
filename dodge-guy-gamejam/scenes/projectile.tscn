@@ -10,15 +10,9 @@ size = Vector2(56, 18)
 monitoring = false
 script = ExtResource("1_projectile")
 
-[node name="Sprite" type="ColorRect" parent="." unique_id=563075732]
-offset_left = -28.0
-offset_top = -9.0
-offset_right = 28.0
-offset_bottom = 9.0
-
-[node name="PixilFrame0" type="Sprite2D" parent="." unique_id=971049143]
-position = Vector2(-1.5, 0.5)
-scale = Vector2(1.0892857, 1.05)
+[node name="Arrow" type="Sprite2D" parent="." unique_id=971049143]
+position = Vector2(-22.000002, -4.7683716e-07)
+scale = Vector2(1.7906746, 2.2562501)
 texture = ExtResource("2_q3m7n")
 
 [node name="CollisionShape2D" type="CollisionShape2D" parent="." unique_id=500915054]

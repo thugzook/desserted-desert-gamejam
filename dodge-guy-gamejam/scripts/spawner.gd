@@ -80,10 +80,10 @@ static func lane_endpoints(lane: Projectile.Lane, target: Player, radius: float)
 	# Offsets from centre, not absolute positions — Godot's Y grows DOWNWARD, so
 	# up (head) is negative and down (feet) is positive. Derived from the sprite,
 	# so resizing the player re-aims every lane automatically.
-	var head_offset_y := -(target.player_size.y / 2)
-	var feet_offset_y := target.player_size.y / 2
+	var head_offset_y := -(target.player_size.y / 3)
+	var feet_offset_y := target.player_size.y / 3
 
-	var center_offset_x := target.player_size.x / 2
+	var center_offset_x := target.player_size.x / 3
 
 	# Anchored to home_position: every lane is a fixed, axis-aligned approach so
 	# the player can learn each one's answer (LANE_ANSWERS in player.gd decides).

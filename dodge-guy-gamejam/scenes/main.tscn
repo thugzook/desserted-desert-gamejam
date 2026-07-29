@@ -2,13 +2,77 @@
 
 [ext_resource type="Script" uid="uid://ch4qc1snynxp3" path="res://scripts/main.gd" id="1_main"]
 [ext_resource type="PackedScene" uid="uid://dy6m3j0picd3k" path="res://scenes/player.tscn" id="2_player"]
+[ext_resource type="Texture2D" uid="uid://c0ixmglsdvkku" path="res://assets/art/cobble.png" id="2_tipki"]
 [ext_resource type="Script" uid="uid://b7u53eemj6khl" path="res://scripts/pattern_spawner.gd" id="3_spawner"]
+[ext_resource type="Shader" uid="uid://cmnphyl6uvasm" path="res://assets/shaders/background_detile.gdshader" id="4_detile"]
 [ext_resource type="PackedScene" uid="uid://cwyrrk1dsu60l" path="res://scenes/projectile.tscn" id="5_projectile"]
-[ext_resource type="Resource" path="res://resources/attacks/zippy.tres" id="6_zippy"]
+[ext_resource type="Resource" uid="uid://bqpm4ekf2b05a" path="res://resources/attacks/zippy.tres" id="6_zippy"]
+[ext_resource type="AudioStream" uid="uid://jd0vbkvmvrw3" path="res://assets/sounds/bow_shoot.mp3" id="8_85g3d"]
 [ext_resource type="PackedScene" uid="uid://b82fbjsmxlm0b" path="res://scenes/hud.tscn" id="9_hud"]
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_detile"]
+shader = ExtResource("4_detile")
+shader_parameter/darkness = 0.5
+shader_parameter/variation_strength = 0.35
+shader_parameter/randomize_flip = true
+
+[sub_resource type="GDScript" id="GDScript_tipki"]
+script/source = "extends Sprite2D
+## The tiled cobblestone floor. This node draws its own texture (it IS the
+## sprite) — no child node needed, so there's nothing to look up here.
+## Darkening and the anti-tiling variation live entirely in the ShaderMaterial
+## on this node — see assets/shaders/background_detile.gdshader for the knobs
+## (Darkness, Variation Strength, Randomize Flip), tunable right on this node
+## in the Inspector.
+"
 
 [node name="Main" type="Node2D" unique_id=437035111]
 script = ExtResource("1_main")
+
+[node name="floor" type="Sprite2D" parent="." unique_id=235622066]
+texture_repeat = 2
+material = SubResource("ShaderMaterial_detile")
+position = Vector2(475.7531, 541.88306)
+rotation = 3.1363566
+scale = Vector2(1.9692167, 0.8853089)
+texture = ExtResource("2_tipki")
+region_enabled = true
+region_rect = Rect2(0, 0, 743, 451)
+script = SubResource("GDScript_tipki")
+
+[node name="background" type="Sprite2D" parent="." unique_id=429073150]
+texture_repeat = 2
+material = SubResource("ShaderMaterial_detile")
+position = Vector2(562, 239.00002)
+scale = Vector2(1.1937829, 1.0498375)
+texture = ExtResource("2_tipki")
+region_enabled = true
+region_rect = Rect2(-145.5, -145, 743, 451)
+script = SubResource("GDScript_tipki")
+
+[node name="background" type="Sprite2D" parent="background" unique_id=1258822100]
+texture_repeat = 2
+material = SubResource("ShaderMaterial_detile")
+position = Vector2(-562.17285, 236.63417)
+rotation = 1.5707964
+scale = Vector2(0.8105435, 1.823006)
+skew = -0.87266463
+texture = ExtResource("2_tipki")
+region_enabled = true
+region_rect = Rect2(-145.5, -145, 743, 451)
+script = SubResource("GDScript_tipki")
+
+[node name="background2" type="Sprite2D" parent="background" unique_id=764817801]
+texture_repeat = 2
+material = SubResource("ShaderMaterial_detile")
+position = Vector2(601.7071, 209.67024)
+rotation = -2.2549653
+scale = Vector2(0.99117285, 1.3295318)
+skew = -0.87266463
+texture = ExtResource("2_tipki")
+region_enabled = true
+region_rect = Rect2(-145.5, -145, 743, 451)
+script = SubResource("GDScript_tipki")
 
 [node name="Ground" type="ColorRect" parent="." unique_id=2016103646]
 offset_top = 544.0
@@ -18,12 +82,16 @@ color = Color(0.38, 0.31, 0.23, 1)
 
 [node name="Player" parent="." unique_id=1999187846 instance=ExtResource("2_player")]
 position = Vector2(583, 444)
+dodge_distance = Vector2(80, 70)
+dodge_return_time = 0.2
+dodge_out_trans = 9
 
 [node name="Spawner" type="Node2D" parent="." unique_id=1575174766 node_paths=PackedStringArray("player")]
 script = ExtResource("3_spawner")
 projectile_scene = ExtResource("5_projectile")
 attack = ExtResource("6_zippy")
 player = NodePath("../Player")
+cue_sound = ExtResource("8_85g3d")
 
 [node name="Camera2D" type="Camera2D" parent="." unique_id=616773023]
 position = Vector2(576, 324)
