@@ -1,0 +1,69 @@
+[gd_scene format=3 uid="uid://cq0xkr8vn2lp7"]
+
+[ext_resource type="Script" uid="uid://blh6bjtht0rcc" path="res://scripts/start_screen.gd" id="1_start"]
+[ext_resource type="FontFile" uid="uid://dilbn7xenlrbm" path="res://assets/fonts/slkscr.ttf" id="2_font"]
+
+[node name="StartScreen" type="Control" unique_id=375666633]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_start")
+pixel_font = ExtResource("2_font")
+
+[node name="Background" type="ColorRect" parent="." unique_id=95543896]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+color = Color(0, 0, 0, 1)
+
+[node name="Center" type="CenterContainer" parent="." unique_id=1569080365]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+
+[node name="Layout" type="VBoxContainer" parent="Center" unique_id=1812500570]
+layout_mode = 2
+theme_override_constants/separation = 30
+alignment = 1
+
+[node name="Title" type="Label" parent="Center/Layout" unique_id=242604530]
+layout_mode = 2
+theme_override_font_sizes/font_size = 32
+text = "desserted maki in the dungeon"
+horizontal_alignment = 1
+
+[node name="Title2" type="Label" parent="Center/Layout" unique_id=1174551860]
+layout_mode = 2
+theme_override_font_sizes/font_size = 32
+text = "for hack rva gamejam 2026"
+horizontal_alignment = 1
+
+[node name="Controls" type="GridContainer" parent="Center/Layout" unique_id=298222241]
+layout_mode = 2
+theme_override_constants/h_separation = 28
+theme_override_constants/v_separation = 14
+columns = 2
+
+[node name="Hint" type="Label" parent="Center/Layout" unique_id=1976996999]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.45, 0.47, 0.53, 1)
+theme_override_font_sizes/font_size = 16
+text = "ARROW KEYS WORK TOO"
+horizontal_alignment = 1
+
+[node name="Prompt" type="Label" parent="Center/Layout" unique_id=1520240461]
+layout_mode = 2
+theme_override_font_sizes/font_size = 24
+text = "PRESS ANY KEY"
+horizontal_alignment = 1
