@@ -1,0 +1,273 @@
+{
+  "bpm": 100,
+  "beats_per_measure": 4,
+  "steps_per_beat": 4,
+  "measures": 10,
+  "notes": [
+    {
+      "measure": 0,
+      "step": 0,
+      "lane": "ANY"
+    },
+    {
+      "measure": 0,
+      "step": 4,
+      "lane": "ANY"
+    },
+    {
+      "measure": 0,
+      "step": 8,
+      "lane": "ANY"
+    },
+    {
+      "measure": 0,
+      "step": 12,
+      "lane": "ANY"
+    },
+    {
+      "measure": 1,
+      "step": 0,
+      "lane": "ANY"
+    },
+    {
+      "measure": 1,
+      "step": 4,
+      "lane": "ANY"
+    },
+    {
+      "measure": 1,
+      "step": 8,
+      "lane": "ANY"
+    },
+    {
+      "measure": 1,
+      "step": 12,
+      "lane": "ANY"
+    },
+    {
+      "measure": 2,
+      "step": 0,
+      "lane": "ANY"
+    },
+    {
+      "measure": 2,
+      "step": 4,
+      "lane": "ANY"
+    },
+    {
+      "measure": 2,
+      "step": 6,
+      "lane": "ANY"
+    },
+    {
+      "measure": 2,
+      "step": 8,
+      "lane": "ANY"
+    },
+    {
+      "measure": 2,
+      "step": 12,
+      "lane": "ANY"
+    },
+    {
+      "measure": 3,
+      "step": 0,
+      "lane": "ANY"
+    },
+    {
+      "measure": 3,
+      "step": 4,
+      "lane": "ANY"
+    },
+    {
+      "measure": 3,
+      "step": 8,
+      "lane": "ANY"
+    },
+    {
+      "measure": 3,
+      "step": 10,
+      "lane": "ANY"
+    },
+    {
+      "measure": 3,
+      "step": 12,
+      "lane": "ANY"
+    },
+    {
+      "measure": 3,
+      "step": 14,
+      "lane": "ANY"
+    },
+    {
+      "measure": 4,
+      "step": 0,
+      "lane": "ANY"
+    },
+    {
+      "measure": 4,
+      "step": 4,
+      "lane": "ANY"
+    },
+    {
+      "measure": 4,
+      "step": 6,
+      "lane": "ANY"
+    },
+    {
+      "measure": 4,
+      "step": 8,
+      "lane": "ANY"
+    },
+    {
+      "measure": 4,
+      "step": 10,
+      "lane": "ANY"
+    },
+    {
+      "measure": 4,
+      "step": 15,
+      "lane": "ANY"
+    },
+    {
+      "measure": 5,
+      "step": 0,
+      "lane": "ANY"
+    },
+    {
+      "measure": 5,
+      "step": 2,
+      "lane": "ANY"
+    },
+    {
+      "measure": 5,
+      "step": 4,
+      "lane": "ANY"
+    },
+    {
+      "measure": 5,
+      "step": 6,
+      "lane": "ANY"
+    },
+    {
+      "measure": 5,
+      "step": 8,
+      "lane": "ANY"
+    },
+    {
+      "measure": 5,
+      "step": 12,
+      "lane": "ANY"
+    },
+    {
+      "measure": 6,
+      "step": 0,
+      "lane": "ANY"
+    },
+    {
+      "measure": 6,
+      "step": 2,
+      "lane": "ANY"
+    },
+    {
+      "measure": 6,
+      "step": 3,
+      "lane": "ANY"
+    },
+    {
+      "measure": 6,
+      "step": 4,
+      "lane": "ANY"
+    },
+    {
+      "measure": 6,
+      "step": 8,
+      "lane": "ANY"
+    },
+    {
+      "measure": 6,
+      "step": 11,
+      "lane": "ANY"
+    },
+    {
+      "measure": 6,
+      "step": 12,
+      "lane": "ANY"
+    },
+    {
+      "measure": 6,
+      "step": 15,
+      "lane": "ANY"
+    },
+    {
+      "measure": 7,
+      "step": 0,
+      "lane": "ANY"
+    },
+    {
+      "measure": 7,
+      "step": 4,
+      "lane": "ANY"
+    },
+    {
+      "measure": 7,
+      "step": 8,
+      "lane": "ANY"
+    },
+    {
+      "measure": 7,
+      "step": 12,
+      "lane": "ANY"
+    },
+    {
+      "measure": 8,
+      "step": 0,
+      "lane": "ANY"
+    },
+    {
+      "measure": 8,
+      "step": 7,
+      "lane": "ANY"
+    },
+    {
+      "measure": 8,
+      "step": 10,
+      "lane": "ANY"
+    },
+    {
+      "measure": 8,
+      "step": 13,
+      "lane": "ANY"
+    },
+    {
+      "measure": 9,
+      "step": 0,
+      "lane": "ANY"
+    },
+    {
+      "measure": 9,
+      "step": 4,
+      "lane": "ANY"
+    },
+    {
+      "measure": 9,
+      "step": 8,
+      "lane": "ANY"
+    },
+    {
+      "measure": 9,
+      "step": 9,
+      "lane": "ANY"
+    },
+    {
+      "measure": 9,
+      "step": 12,
+      "lane": "ANY"
+    },
+    {
+      "measure": 9,
+      "step": 14,
+      "lane": "ANY"
+    }
+  ]
+}

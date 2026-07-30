@@ -22,6 +22,11 @@ var _pulse: Tween
 ## and the ghost fade on a dodged hit (data.ghost_alpha), all via modulate:a.
 @onready var art: Sprite2D = $Arrow
 @onready var shape: CollisionShape2D = $CollisionShape2D
+## The white streak. Emits in WORLD space (local_coords off), so the sparks stay
+## where they were born and the arrow pulls away from them — that's the trail.
+## Silent until _launch(): emitting through the telegraph would just pile a bright
+## heap of sparks on the spawn point and spoil the wind-up.
+@onready var trail: CPUParticles2D = $Trail
 
 
 ## Called by the Spawner BEFORE add_child, so _ready() has everything it needs.
@@ -87,6 +92,7 @@ func ghost() -> void:
 	set_deferred("monitoring", false)
 	set_deferred("monitorable", false)
 	art.modulate.a = data.ghost_alpha
+	trail.emitting = false   # a dodged shot is spent — it shouldn't keep drawing the eye
 
 
 ## Telegraph over. The blink must STOP here — a solid arrow is the cue that
@@ -95,3 +101,4 @@ func _launch() -> void:
 	if _pulse and _pulse.is_valid():
 		_pulse.kill()
 	art.modulate.a = 1.0
+	trail.emitting = true

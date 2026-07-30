@@ -1,0 +1,19 @@
+[remap]
+
+importer="mp3"
+type="AudioStreamMP3"
+uid="uid://tt0rnt5d0rh2"
+path="res://.godot/imported/Tommaso Croce - dark alley II.mp3-e963761967288518d50c365ead53f865.mp3str"
+
+[deps]
+
+source_file="res://assets/sounds/Tommaso Croce - dark alley II.mp3"
+dest_files=["res://.godot/imported/Tommaso Croce - dark alley II.mp3-e963761967288518d50c365ead53f865.mp3str"]
+
+[params]
+
+loop=true
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4

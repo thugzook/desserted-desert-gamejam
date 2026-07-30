@@ -9,11 +9,22 @@
 [ext_resource type="Resource" uid="uid://bqpm4ekf2b05a" path="res://resources/attacks/zippy.tres" id="6_zippy"]
 [ext_resource type="AudioStream" uid="uid://jd0vbkvmvrw3" path="res://assets/sounds/bow_shoot.mp3" id="8_85g3d"]
 [ext_resource type="PackedScene" uid="uid://b82fbjsmxlm0b" path="res://scenes/hud.tscn" id="9_hud"]
+[ext_resource type="PackedScene" path="res://scenes/torch.tscn" id="10_torch"]
+[ext_resource type="Shader" uid="uid://do4g2src3swkg" path="res://assets/shaders/torch_vignette.gdshader" id="11_vig"]
+[ext_resource type="Script" uid="uid://btjsb53j3i7bk" path="res://scripts/torch_vignette.gd" id="12_vigscript"]
+[ext_resource type="Shader" uid="uid://gtuu8s2r23kt" path="res://assets/shaders/perspective_floor.gdshader" id="13_persp"]
+[ext_resource type="AudioStream" uid="uid://tt0rnt5d0rh2" path="res://assets/sounds/Tommaso Croce - dark alley II.mp3" id="14_a8y0u"]
 
-[sub_resource type="ShaderMaterial" id="ShaderMaterial_detile"]
-shader = ExtResource("4_detile")
-shader_parameter/darkness = 0.5
-shader_parameter/variation_strength = 0.35
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_perspective"]
+shader = ExtResource("13_persp")
+shader_parameter/region_rect = Vector4(0, 0, 743, 451)
+shader_parameter/fov = 179.0
+shader_parameter/cull_back = true
+shader_parameter/x_rot = -17.142992264292502
+shader_parameter/y_rot = 8.549999989782009e-06
+shader_parameter/inset = 0.0
+shader_parameter/darkness = 0.65200003097
+shader_parameter/variation_strength = 0.31200001482
 shader_parameter/randomize_flip = true
 
 [sub_resource type="GDScript" id="GDScript_tipki"]
@@ -26,15 +37,36 @@ script/source = "extends Sprite2D
 ## in the Inspector.
 "
 
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_detile"]
+shader = ExtResource("4_detile")
+shader_parameter/darkness = 0.5
+shader_parameter/variation_strength = 0.35
+shader_parameter/randomize_flip = true
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_eb6dy"]
+shader = ExtResource("11_vig")
+shader_parameter/center = Vector2(0.5, 0.5)
+shader_parameter/light_color = Color(1, 0.55, 0.18, 1)
+shader_parameter/radius = 0.8
+shader_parameter/core = 0.25
+shader_parameter/darkness = 0.8
+shader_parameter/ambient = 0.0
+shader_parameter/glow_strength = 0.45
+shader_parameter/pixel_size = 6.0
+shader_parameter/light_steps = 3
+shader_parameter/flicker_speed = 1.0
+shader_parameter/flicker_amount = 0.01
+shader_parameter/brightness_flicker = 0.1
+
 [node name="Main" type="Node2D" unique_id=437035111]
 script = ExtResource("1_main")
 
 [node name="floor" type="Sprite2D" parent="." unique_id=235622066]
 texture_repeat = 2
-material = SubResource("ShaderMaterial_detile")
-position = Vector2(475.7531, 541.88306)
+material = SubResource("ShaderMaterial_perspective")
+position = Vector2(612.7998, 550.95917)
 rotation = 3.1363566
-scale = Vector2(1.9692167, 0.8853089)
+scale = Vector2(1.531357, 0.8853089)
 texture = ExtResource("2_tipki")
 region_enabled = true
 region_rect = Rect2(0, 0, 743, 451)
@@ -53,9 +85,9 @@ script = SubResource("GDScript_tipki")
 [node name="background" type="Sprite2D" parent="background" unique_id=1258822100]
 texture_repeat = 2
 material = SubResource("ShaderMaterial_detile")
-position = Vector2(-562.17285, 236.63417)
+position = Vector2(-562.17285, 210.42421)
 rotation = 1.5707964
-scale = Vector2(0.8105435, 1.823006)
+scale = Vector2(0.88109505, 1.823006)
 skew = -0.87266463
 texture = ExtResource("2_tipki")
 region_enabled = true
@@ -74,27 +106,51 @@ region_enabled = true
 region_rect = Rect2(-145.5, -145, 743, 451)
 script = SubResource("GDScript_tipki")
 
+[node name="Torch" parent="." unique_id=1849302770 instance=ExtResource("10_torch")]
+position = Vector2(576, 324)
+fps = 5.0
+
 [node name="Ground" type="ColorRect" parent="." unique_id=2016103646]
+visible = false
 offset_top = 544.0
 offset_right = 1152.0
 offset_bottom = 552.0
 color = Color(0.38, 0.31, 0.23, 1)
 
-[node name="Player" parent="." unique_id=1999187846 instance=ExtResource("2_player")]
-position = Vector2(583, 444)
-dodge_distance = Vector2(80, 70)
-dodge_return_time = 0.2
-dodge_out_trans = 9
+[node name="Camera2D" type="Camera2D" parent="." unique_id=616773023]
+position = Vector2(576, 324)
 
-[node name="Spawner" type="Node2D" parent="." unique_id=1575174766 node_paths=PackedStringArray("player")]
+[node name="TorchVignette" type="CanvasLayer" parent="." unique_id=1849302771]
+
+[node name="Shade" type="ColorRect" parent="TorchVignette" unique_id=1849302772 node_paths=PackedStringArray("torch")]
+material = SubResource("ShaderMaterial_eb6dy")
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+script = ExtResource("12_vigscript")
+torch = NodePath("../../Torch")
+
+[node name="Spawner" type="Node2D" parent="TorchVignette" unique_id=1575174766 node_paths=PackedStringArray("player")]
 script = ExtResource("3_spawner")
 projectile_scene = ExtResource("5_projectile")
 attack = ExtResource("6_zippy")
 player = NodePath("../Player")
+main_pattern_path = "res://patterns/main_pattern1.json"
+speed_step = 0.15
 cue_sound = ExtResource("8_85g3d")
 
-[node name="Camera2D" type="Camera2D" parent="." unique_id=616773023]
-position = Vector2(576, 324)
+[node name="Player" parent="TorchVignette" unique_id=1999187846 instance=ExtResource("2_player")]
+position = Vector2(583, 444)
+dodge_return_time = 0.2
+dodge_out_trans = 9
 
 [node name="HUD" parent="." unique_id=1471756075 node_paths=PackedStringArray("player") instance=ExtResource("9_hud")]
-player = NodePath("../Player")
+layer = 2
+player = NodePath("../TorchVignette/Player")
+
+[node name="AudioStreamPlayer2D" type="AudioStreamPlayer2D" parent="." unique_id=157950582]
+stream = ExtResource("14_a8y0u")
+autoplay = true

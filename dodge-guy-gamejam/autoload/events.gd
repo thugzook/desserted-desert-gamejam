@@ -12,4 +12,5 @@ signal dodge_failed                                    ## Not enough stamina —
 signal stamina_changed(current: int, max_value: int, partial: float)  ## partial = 0..1 toward the next bar
 signal run_started
 signal run_ended(time_survived: float)
+signal speed_changed(multiplier: float)                ## A pattern was cleared — everything is speeding up to this.
 @warning_ignore_restore("unused_signal")

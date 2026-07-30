@@ -143,6 +143,9 @@ var _sprite_home := Vector2.ZERO      # the sprite's resting local position
 ## The drawn body. Rides on the sprite box, so it inherits the dodge nudge and
 ## the i-frame blink. Owns one image per direction — see player_art.gd.
 @onready var art: PlayerArt = $Sprite/Art
+## The blob shadow. Deliberately NOT a child of the sprite box — it has to stay
+## on the ground while the body leaves it. Fed by _process below.
+@onready var shadow: PlayerShadow = $Shadow
 ## Sounds are named for WHEN they play, not what they contain — swap the stream
 ## or set volume on the node in the Inspector.
 @onready var dodge_sound: AudioStreamPlayer = $DodgeSound
@@ -170,6 +173,15 @@ func _physics_process(delta: float) -> void:
 	_consume_buffer()
 	# STAMINA DISABLED (2026-07-26): no recharge while dodges are free.
 	#_regen(delta)
+
+
+## Read in _process, not _physics_process, because the dodge tween runs on the
+## idle step — sampling it here keeps the shadow exactly in sync with the drawn
+## body instead of a frame behind it. Measured off the SPRITE because that's the
+## node a dodge nudges (with dodge_moves_hurtbox ON the sprite never moves, so
+## the shadow just rides along with the body and won't react to height).
+func _process(_delta: float) -> void:
+	shadow.set_lift(_sprite_home.y - sprite.position.y, sprite.position.x - _sprite_home.x)
 
 
 ## True only during the deflect window at the START of the parry.

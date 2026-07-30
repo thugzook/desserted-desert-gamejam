@@ -10,14 +10,12 @@
 [ext_resource type="AudioStream" uid="uid://oaf7whpp4pk8" path="res://assets/sounds/undertale_dog_bark.mp3" id="8_bark"]
 [ext_resource type="AudioStream" uid="uid://cv2mhiennx4mt" path="res://assets/sounds/healing.mp3" id="9_heal"]
 [ext_resource type="Shader" uid="uid://cecf0y7opend4" path="res://assets/shaders/idle_breath.gdshader" id="10_breath"]
+[ext_resource type="Script" uid="uid://bupuoy7tbj8h7" path="res://scripts/player_shadow.gd" id="11_shadow"]
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_breath"]
 shader = ExtResource("10_breath")
 shader_parameter/breath_amount = 0.03
 shader_parameter/breath_speed = 2.5
-
-[sub_resource type="CompressedTexture2D" id="CompressedTexture2D_y4r1p"]
-load_path = "res://.godot/imported/maki-left.png-6e605d5139a420e1e823fdc1148af2f2.ctex"
 
 [sub_resource type="CapsuleShape2D" id="CapsuleShape2D_o6xl0"]
 radius = 65.0
@@ -27,7 +25,12 @@ height = 206.0
 texture_filter = 1
 monitorable = false
 script = ExtResource("1_player")
-dodge_distance = Vector2(40, 100)
+dodge_distance = Vector2(80, 70)
+max_hp = 5
+
+[node name="Shadow" type="Node2D" parent="." unique_id=786903956]
+position = Vector2(-5, 108)
+script = ExtResource("11_shadow")
 
 [node name="Sprite" type="ColorRect" parent="." unique_id=528871655]
 texture_filter = 1
@@ -42,7 +45,7 @@ texture_filter = 1
 material = SubResource("ShaderMaterial_breath")
 position = Vector2(95, 108)
 scale = Vector2(0.74626863, 0.74626863)
-texture = SubResource("CompressedTexture2D_y4r1p")
+texture = ExtResource("3_qhqgy")
 offset = Vector2(0, 4.7922135e-06)
 script = ExtResource("2_art")
 idle_texture = ExtResource("3_qhqgy")
